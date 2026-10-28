@@ -336,6 +336,15 @@ check "…/x на раскрытой — остаётся раскрытой" "�
 check "…/point с раскрытой — та же точка, свёрнуто" "/done (2)" $F nav point
 check "…вернул задачу" "Сверка с Олей" $F unhide запуск "Сверка с Олей"
 check "…номера пересчитаны" "– Сверка с Олей  /x1" $F open запуск
+check "переключатель вида в заголовке задач" "Задачи /full:" $F open запуск
+check "/full — полный текст, с заголовком" "– Сверка с Олей — Сверить финальное количество участников в канале со списком купивших, это делает Оля, потом сообщить мне  /x1" $F nav full
+check "…переключатель стал /zip" "Задачи /zip:" $F view
+check "…вид запоминается" "Задачи /zip:" $F open запуск
+lacks "…короткой строки нет" "– Сверка с Олей  /x1" $F open запуск
+check "…раскрытые выполненные — тоже полностью" "✓ Рассылка неоплатившим — Сделать рассылку по тем, кто создал счёт и не оплатил. Касается всех." $F nav card done
+check "…/zip на раскрытой — остаётся раскрытой" "Выполнено (1):" $F nav zip
+check "…и снова коротко" "– Сверка с Олей  /x1" $F view
+check "…переключатель снова /full" "Задачи /full:" $F view
 lacks "…и в списке потоков нет" "Рассылка неоплатившим" $F status
 check "…но в файле осталась" "✓ **Рассылка неоплатившим.**" bash -c "cat $T/brain/flows/zapusk-kursa/2026-11-01.md"
 check "пункта нет" "нет пункта 9" $F hide 9
@@ -411,6 +420,7 @@ check "…/comments есть" 'target: "/new flows card комментарии"'
 check "…/calendar есть" 'target: "/new flows calendar"' cat "$T/hh/config.yaml"
 check "…/conclusions — выводы потока" 'target: "/new flows conclusions"' cat "$T/hh/config.yaml"
 check "…/done — выполненные задачи" 'target: "/new flows card done"' cat "$T/hh/config.yaml"
+check "…/full, /zip — вид задач" 'target: "/new flows zip"' cat "$T/hh/config.yaml"
 lacks "…/insights (встроенная Hermes) убрана" '"insights"' cat "$T/hh/config.yaml"
 check "повтор — без изменений" "уже на месте" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
 mkdir -p "$T/hh/hooks/flows-nav" "$T/hh/hermes-agent/gateway"

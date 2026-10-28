@@ -4,6 +4,7 @@
 #   /1 … /30 — карточка открытой точки потока с этим номером из последнего каталога;
 #   /point — последняя открытая точка;  /prev, /next — листать точки потока;
 #   /comments — комментарии точки под указателем (идеи — среди них, с 💡);
+#   /full, /zip — задачи в карточке полным текстом / короткими заголовками (вид запоминается);
 #   /conclusions — выводы потока;  /calendar — календарь;
 #   /x1 … /x30 — отметить выполненной (скрыть) задачу/идею с этим номером в последней карточке
 #                (на экране календаря — закрыть событие).
@@ -42,7 +43,7 @@ cfg = pathlib.Path(os.environ.get("FLOWS_CONFIG", pathlib.Path.home() / ".config
 prefix = str(json.loads(cfg.read_text()).get("list_cmd_prefix", "")) if cfg.exists() else ""
 
 nav = {"list": "list", "list3": "list3", "point": "point", "prev": "prev", "next": "next",
-       "comments": "card комментарии", "done": "card done", "conclusions": "conclusions", "calendar": "calendar"}
+       "comments": "card комментарии", "done": "card done", "full": "full", "zip": "zip", "conclusions": "conclusions", "calendar": "calendar"}
 nav.update({f"{prefix}{i}": f"open {i}" for i in range(1, 31)})
 ours = {}
 for name, where in nav.items():
@@ -86,6 +87,6 @@ if text == cy.read_text():
     print(f"✓ Кнопки уже на месте ({how})"); sys.exit(0)
 shutil.copy(cy, f"{cy}.bak-commands-{time.strftime('%Y%m%d-%H%M')}")
 cy.write_text(text)
-print(f"✓ Кнопки: /list, /list3, /point, /{prefix}1 … /{prefix}30, /prev, /next, /comments, /done, /conclusions, /calendar, /x1 … /x30"
+print(f"✓ Кнопки: /list, /list3, /point, /{prefix}1 … /{prefix}30, /prev, /next, /comments, /done, /full, /zip, /conclusions, /calendar, /x1 … /x30"
       f" ({how}) — нужен /restart")
 PY

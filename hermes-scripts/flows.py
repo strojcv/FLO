@@ -1323,6 +1323,7 @@ CARD_KEYS = {"комментарии": "comments", "комментарий": "co
              "выводы": "comments", "vyvody": "comments",   # старые кнопки
              "идеи": "comments", "ideas": "comments", "idei": "comments"}   # идеи — в комментариях
 NAV_CMDS = {"prev": "prev", "next": "next", "point": "point"}
+VIEW_CMDS = {"full": "full", "zip": "zip"}   # вид задач в карточке: полный текст / короткие заголовки
 CURRENT_MARK = "⚡"      # открытая точка — первый символ шапки карточки (у завершённых POINT_MARK)
 PRIO_MARKS = {1: "🔴", 2: "🟡", 3: "🟢"}   # приоритет: в каталоге — перед заголовком, в потоке — после названия
 
@@ -1348,14 +1349,24 @@ def _save_card(f: Flow, kind: str, items: list[tuple[Path, str]], p: Point | Non
     save_state(st)
 
 
-def _entry_line(e: str, tail: str = "") -> str:
+def _entry_line(e: str, tail: str = "", full: bool = False) -> str:
+    """Строка пункта: «– заголовок»; full — «– Заголовок — весь текст» без обрезки."""
     mark = "✓" if is_hidden(e) else "–"
-    return f"{mark} {short(brief(plain(entry_parts(e)[1])), 100)}{tail}"
+    if not full:
+        return f"{mark} {short(brief(plain(entry_parts(e)[1])), 100)}{tail}"
+    text = " ".join(plain(entry_parts(e)[1]).split())
+    if text.startswith(HIDDEN_MARK.strip()):
+        text = text[len(HIDDEN_MARK.strip()):].lstrip()
+    m = BRIEF_RE.match(text)
+    if m:
+        rest = text[m.end():].strip()
+        text = m.group(1).strip().rstrip(".") + (f" — {rest}" if rest else "")
+    return f"{mark} {text}{tail}"
 
 
-def _print_items(caption: str, path: Path, es: list[str], items: list, hide: bool = True):
-    """Пункты с короткими заголовками; hide — с кнопками /xK (скрытые не показываются),
-    иначе все, скрытые (сделанные) — с ✓."""
+def _print_items(caption: str, path: Path, es: list[str], items: list, hide: bool = True, full: bool = False):
+    """Пункты с короткими заголовками (full — полным текстом); hide — с кнопками /xK (скрытые не
+    показываются), иначе все, скрытые (сделанные) — с ✓."""
     if hide:
         es = [e for e in es if not is_hidden(e)]
     if not es:
@@ -1366,7 +1377,7 @@ def _print_items(caption: str, path: Path, es: list[str], items: list, hide: boo
         if hide:
             items.append((path, e))
             tail = f"  /{HIDE_PREFIX}{len(items)}" if len(items) <= LIST_LINKS else ""
-        print(_entry_line(e, tail))
+        print(_entry_line(e, tail, full))
 
 
 def _visible_globals(f: Flow, key: str) -> list[str]:
@@ -1404,17 +1415,19 @@ def print_point_card(f: Flow, p: Point | None, done_open: bool = False):
         print("\n" + FOOTER)
         return
     print(f"/{CARD_CMDS['comments']} ({len(p.entries('comments'))})")
+    full = bool(load_state().get("tasks_full"))
+    caption = f"Задачи /{VIEW_CMDS['zip' if full else 'full']}"   # переключатель вида — перед двоеточием
     if p.is_open:
-        _print_items("Задачи", p.path, p.entries("tasks"), items)
+        _print_items(caption, p.path, p.entries("tasks"), items, full=full)
         if not items:
             print("\nзадач пока нет")
         done = [e for e in p.entries("tasks") if is_hidden(e)]
         if done and done_open:
-            print(f"\nВыполнено ({len(done)}):\n" + "\n".join(_entry_line(e) for e in done))
+            print(f"\nВыполнено ({len(done)}):\n" + "\n".join(_entry_line(e, full=full) for e in done))
         elif done:
             print(f"\n/{CARD_CMDS['done']} ({len(done)})")
     else:
-        _print_items("Задачи", p.path, p.entries("tasks"), items, hide=False)
+        _print_items(caption, p.path, p.entries("tasks"), items, hide=False, full=full)
         if not p.entries("tasks"):
             print("\nзадач не было")
     _save_card(f, "done" if done_open and p.is_open else "point", items, p)
@@ -1520,6 +1533,12 @@ def go(target: list[str]):
     f = resolve_flow(cur)
     ptr = get_pointer() or {}
     p = _pointer_point(f, ptr)
+    if what in ("full", "zip", "полный", "короткий"):   # вид задач: запоминается, экран — тот же
+        st = load_state()
+        st["tasks_full"] = what in ("full", "полный")
+        save_state(st)
+        kind = (st.get("last_card") or {}).get("kind")
+        return set_pointer(f.slug, ptr.get("point", ""), screen="done" if kind == "done" else "")
     if what in ("card", "карточка"):
         key = CARD_KEYS.get(norm(rest[0]) if rest else "")
         if not key:
@@ -1533,7 +1552,7 @@ def go(target: list[str]):
         q = pts[max(0, min(k, len(pts) - 1))]
         stay = (load_state().get("last_card") or {}).get("kind") == "comments"   # листаем комментарии
         return set_pointer(f.slug, "" if q.is_open else q.stem, screen="comments" if stay else "")
-    die(f"Не понимаю «{what}». Можно: list, list3, open N, prev, next, point, card комментарии, conclusions, calendar")
+    die(f"Не понимаю «{what}». Можно: list, list3, open N, prev, next, point, card комментарии, full, zip, conclusions, calendar")
 
 
 def cmd_go(a):

@@ -49,7 +49,7 @@ F="python3 $HOME/.hermes/scripts/flows.py"   # не ~ : в кавычках ти
 | «Это идея, а не комментарий» | `$F undo --to идеи` |
 
 Кнопки, если дошли до тебя: `/list` → `$F nav list`, `/N` → `$F nav open N`, `/prev` `/next`
-`/point` → `$F nav …`, `/comments` → `$F nav card комментарии`, `/done` → `$F nav card done`, `/conclusions` → `$F nav conclusions`,
+`/point` → `$F nav …`, `/comments` → `$F nav card комментарии`, `/done` → `$F nav card done`, `/full` `/zip` → `$F nav full|zip`, `/conclusions` → `$F nav conclusions`,
 `/calendar` → `$F nav calendar`, `/xN` → `$F hide N`. Вывод — как есть.
 
 ## Как писать
