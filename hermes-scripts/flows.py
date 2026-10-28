@@ -2651,10 +2651,13 @@ def print_calendar(days: int | None = None):
 
     if dated:
         print()
-    for ev in dated:
-        w, _ = ev.when
+    for i, ev in enumerate(dated):
+        if i:
+            print()                           # события с датой — через пустую строку
+        w, ht = ev.when
         today_mark = f"{CURRENT_MARK} " if w.date() == t.date() else ""   # сегодня — ⚡ сразу после номера
-        row(ev, f"{today_mark}{ev.when_txt()}" + (" (прошло)" if w < t else "") + f"\n   {ev.title}")   # дата, ниже что
+        day = f"{WEEKDAYS[w.weekday()]}" + (w.strftime(" %H:%M") if ht else "") + f" {dm(w.date())}"   # сб 15:00 31.10
+        row(ev, f"{today_mark}{day}" + (" (прошло)" if w < t else "") + f"\n   {ev.title}")   # день, время, дата; ниже что
     if undated:
         print("\n📌 Без даты")
     for ev in undated:
