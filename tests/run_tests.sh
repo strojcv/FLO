@@ -244,6 +244,10 @@ check "/calendar: с датой по времени, ⏰ — когда напо
 
 /conclusions   /calendar   /list   /point" $F nav calendar
 check "кнопка через /new: go + view" "🗓 Календарь" bash -c "$F go calendar; $F view"
+check "сегодняшнее событие — ⚡ перед названием" "1. сб 31.10 15:00 — ⚡ Пойти к стоматологу" at 2026-10-31T09:00 $F calendar
+check "…другие дни — без ⚡" "2. вт 03.11 10:00 — Позвонить в банк" at 2026-10-31T09:00 $F calendar
+check "…прошедшее сегодня — тоже с ⚡" "— ⚡ Пойти к стоматологу (прошло)" at 2026-10-31T16:00 $F calendar
+lacks "…вчерашнее — без ⚡" "⚡" at 2026-11-01T09:00 $F calendar
 lacks "…разовый экран: следующий /new — не календарь" "🗓" $F view
 check "/x4 убирает событие" "✓ Убрал: Купить зимнюю резину" bash -c "$F nav calendar >/dev/null; $F hide 4"
 lacks "…его нет в календаре" "резину" $F calendar

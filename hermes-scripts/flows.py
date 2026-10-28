@@ -2653,7 +2653,8 @@ def print_calendar(days: int | None = None):
         print()
     for ev in dated:
         w, _ = ev.when
-        row(ev, f"{ev.when_txt()} — {ev.title}" + (" (прошло)" if w < t else ""))
+        today_mark = f"{CURRENT_MARK} " if w.date() == t.date() else ""   # сегодня — ⚡ перед названием
+        row(ev, f"{ev.when_txt()} — {today_mark}{ev.title}" + (" (прошло)" if w < t else ""))
     if undated:
         print("\n📌 Без даты")
     for ev in undated:
