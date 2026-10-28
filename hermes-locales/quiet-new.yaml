@@ -1,0 +1,15 @@
+# flows-organizer: пустые строки стандартного ответа Hermes на /new («Session reset!», модель,
+# провайдер, контекст, совет дня). Пустой ответ Telegram-адаптер Hermes не отправляет, и после /new
+# в чате остаётся только экран органайзера (его шлёт хук flows-nav). Кладёт install.sh в
+# ~/.hermes/locales/en.yaml и ru.yaml, если там нет чужого файла. Вернуть как было — удалить файлы.
+gateway:
+  reset:
+    header_default: ""
+    header_new: ""
+    tip: ""
+  session:
+    info_model: ""
+    info_provider: ""
+    info_context: ""
+    info_acting_model: ""
+    info_endpoint: ""

@@ -1,0 +1,5 @@
+name: flows-nav
+description: "Органайзер потоков: кнопки /list, /1, /nazad … — указатель + чистый /new; после /new — экран под указателем"
+events:
+  - command:new
+  - session:reset
