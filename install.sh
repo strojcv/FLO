@@ -12,8 +12,10 @@
 #     ~/.hermes/locales/{en,ru}.yaml — пустой стандартный ответ на /new (вместо него — экран);
 #   - переводит данные на «одну открытую точку в потоке» (flows.py migrate, можно повторять);
 #   - заводит кнопки в config.yaml (setup-commands.sh: только свои quick_commands, остальное не трогает);
+#   - включает в Hermes голосовые через органайзер, /new без «точно?» и задачу напоминаний
+#     (setup-hermes.sh: показывает, спрашивает «да», копия config.yaml; без терминала — только подсказки);
 #   - прогоняет тесты пакета.
-# Не трогает: config.json, остальной config.yaml, другие навыки, задачи cron, Whisper.
+# Не трогает: config.json, остальной config.yaml, другие навыки, чужие задачи cron, Whisper.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
@@ -126,53 +128,19 @@ if [ -z "$(git -C "$BRAIN" config user.name || true)" ]; then
 fi
 echo "$NEW_VER" > "$CFG_DIR/installed-version"
 
-# 7. config.yaml: кнопки заводим сами, остальное проверяем и подсказываем
+# 7. config.yaml: кнопки заводим сами; голосовые, /new без «точно?», напоминания — спросив «да»
 TODO=0
 CY="$HH/config.yaml"
-if ! grep -q "flows_stt.py" "$CY" 2>/dev/null; then
-  TODO=1
-  cat <<EOF
-
-⚠ В $CY не подключена расшифровка. Резервная копия: cp $CY $CY.bak-flows
-  Затем замени блок stt на:
-
-stt:
-  provider: flows
-  providers:
-    flows:
-      type: command
-      command: "python3 $HH/scripts/flows_stt.py {input_path} {output_path}"
-      format: txt
-      timeout: 3600
-EOF
-fi
 if [ -f "$CY" ]; then
   HERMES_HOME="$HH" bash "$SRC/setup-commands.sh" || { TODO=1; echo "⚠ Кнопки не завелись — запусти: bash $SRC/setup-commands.sh"; }
 fi
-if ! grep -qE "^\s*destructive_slash_confirm:\s*false" "$CY" 2>/dev/null; then
-  TODO=1
-  cat <<EOF
-
-⚠ /new спрашивает подтверждение — кнопки органайзера (они идут через /new) сработают со второго
-  нажатия. Чтобы с одного: hermes config set approvals.destructive_slash_confirm false
-EOF
-fi
-if ! grep -q "flows_remind.py" "$HH/cron/jobs.json" 2>/dev/null; then
-  TODO=1
-  cat <<EOF
-
-⚠ Нет фоновых задач органайзера (без нейросети, токены не тратят):
-   hermes cron create "every 1m" --no-agent --script flows_remind.py --deliver telegram --name flows-reminders
-   hermes config set cron.wrap_response false     # чтобы в push было название точки, а не «Cronjob Response»
-   hermes config set cron.mirror_delivery true    # чтобы на напоминание можно было ответить «отложи на 15 минут»
-EOF
-fi
+HERMES_HOME="$HH" bash "$SRC/setup-hermes.sh" || { TODO=1; echo "⚠ Позже: bash $SRC/setup-hermes.sh"; }
 
 cat <<EOF
 
 ✅ FLO $NEW_VER на месте. Данные в $BRAIN сохранены, config.json не тронут.
 EOF
-if [ "$TODO" = 1 ]; then echo "Сначала сделай пункты с ⚠ выше (подробно — README.md)."; fi
+if [ "$TODO" = 1 ]; then echo "Сначала сделай пункты с ⚠ выше (подробно — readme-install.md)."; fi
 cat <<EOF
 Чтобы Hermes подхватил новые навыки и SOUL.md: hermes gateway restart
 (или /restart в Telegram), затем /new.

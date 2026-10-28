@@ -7,8 +7,7 @@
 
 ```bash
 git clone https://github.com/strojcv/FLO.git ~/flows-organizer
-bash ~/flows-organizer/install.sh          # тесты, установка; в конце — строки с ⚠
-# сделать строки с ⚠ (блок stt, подтверждение /new, задача напоминаний) и снова install.sh — ⚠ не будет
+bash ~/flows-organizer/install.sh          # тесты, установка; на «Сделать? [Д/н]» — да
 bash ~/flows-organizer/setup-gigaam.sh     # расшифровка голосовых (GigaAM, ~225 МБ)
 hermes gateway restart
 ```
@@ -48,7 +47,9 @@ bash ~/flows-organizer/install.sh
 Под `root` установщик не запускать: он поставит всё в `/root/...`, и Hermes этого не увидит.
 
 Установщик сначала гоняет тесты; если они не прошли, ничего не ставит. Данные в `~/brain`
-и настройки не трогает. Строки с ⚠ в конце — что ещё сделать руками.
+и настройки не трогает. Если в Hermes не включены голосовые через органайзер, `/new` без «точно?»
+или напоминания — покажет и спросит «Сделать? [Д/н]» (копия `config.yaml` — `.bak-flows-<дата>`).
+Строки с ⚠ в конце — что осталось сделать.
 
 ## 4. Перезапустить Hermes
 
@@ -62,13 +63,8 @@ bash ~/flows-organizer/install.sh
 кнопки в `config.yaml` (строка «✓ Кнопки…»); после этого нужен `/restart`. В строке видно режим: «через /new, контекст чистится» —
 основной; «без /new» — Hermes старый, кнопки работают, но контекст не чистят.
 
-`/new` по умолчанию спрашивает «точно?». Чтобы кнопки срабатывали с одного нажатия (под <user>):
-
-```bash
-hermes config set approvals.destructive_slash_confirm false
-```
-
-(подтверждение пропадёт и у других «опасных» команд Hermes). Вручную (`bash ~/flows-organizer/setup-commands.sh`) — только если
+`/new` по умолчанию спрашивает «точно?» — тогда кнопки срабатывают со второго нажатия. Установщик
+предлагает это выключить (подтверждение пропадёт и у других «опасных» команд Hermes). Вручную (`bash ~/flows-organizer/setup-commands.sh`) — только если
 установщик написал ⚠ про кнопки или поменял `list_cmd_prefix`.
 
 ## 5. Модель для голосовых GigaAM (один раз)
@@ -109,10 +105,9 @@ bash ~/flows-organizer/setup-gigaam.sh
    ```
    Если на новом сервере другое имя пользователя — поправить пути в `~/.config/flows/config.json`
    (`brain`, `stt_venv_python`, `stt_engine_python`).
-3. `bash ~/flows-organizer/install.sh` — ставит всё своё, заводит кнопки.
-4. Сделать все строки с ⚠ из конца вывода установщика: блок `stt` в `config.yaml`,
-   `approvals.destructive_slash_confirm false`, фоновая задача напоминаний (`hermes cron create …`,
-   `cron.wrap_response false`, `cron.mirror_delivery true`). Повторный `install.sh` покажет, что осталось.
+3. `bash ~/flows-organizer/install.sh` — ставит всё своё, заводит кнопки; на вопрос «Сделать?»
+   ответить «да» (голосовые, `/new` без «точно?», напоминания).
+4. Строки с ⚠, если остались, — сделать; повторный `install.sh` покажет, что осталось.
 5. Голосовые: `bash ~/flows-organizer/setup-gigaam.sh` (шаг 5). Whisper из OpenClaw
    (`~/.openclaw/tools/venv`) может не быть — тогда убрать строки `openai-whisper…`,
    `faster-whisper…` из `stt_engines` в `config.json` или поставить свой venv и указать его в `stt_venv_python`.

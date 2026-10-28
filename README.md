@@ -9,7 +9,7 @@ git clone https://github.com/strojcv/FLO.git ~/flows-organizer
 bash ~/flows-organizer/install.sh
 ```
 
-Дальше — строки с ⚠ из вывода установщика, `hermes gateway restart`, в Telegram `/new` и `/list`.
+На вопрос «Сделать? [Д/н]» — «да». Дальше `hermes gateway restart`, в Telegram `/new` и `/list`.
 По шагам, голосовые, обновление — [readme-install.md](readme-install.md).
 
 Голосом или текстом в Telegram ведёшь **потоки** работы. Hermes помнит, где ты остановился,
@@ -93,9 +93,10 @@ Python из `~/.openclaw/tools/venv` (там стоят openai-whisper и faster
 — ставит её в отдельный venv `~/.venvs/gigaam` и делает первым движком, Whisper остаётся запасным.
 Облачный вариант (Groq / OpenAI) — `"stt_backend": "groq"` и ключ в `~/.config/flows/secrets.env`.
 
-**3. Подключить расшифровку к Hermes.** Сначала резервная копия:
-`cp ~/.hermes/config.yaml ~/.hermes/config.yaml.bak-flows`. Потом в `~/.hermes/config.yaml`
-замени блок `stt` на тот, что напечатал установщик. Откат — вернуть копию и
+**3. Подключить расшифровку к Hermes.** Это делает `install.sh`: если голосовые ещё не идут в
+органайзер, он покажет это вместе с двумя другими настройками (`/new` без «точно?», напоминания)
+и спросит «Сделать? [Д/н]». На «да» — копия `~/.hermes/config.yaml.bak-flows-<дата>` и блок `stt`
+через `hermes config set`. Отдельно: `bash ~/flows-organizer/setup-hermes.sh`. Откат — вернуть копию и
 `hermes gateway restart`. `timeout: 3600` — запас на записи до 30 минут на CPU.
 
 **4. Новый SOUL.md и перезапуск.**
@@ -113,7 +114,7 @@ hermes gateway restart
 Папку `~/assistant/` не удаляй — её записи можно перенести в копилку.
 
 **5. Фоновые задачи.** Сначала в чате с ботом отправь `/sethome`, чтобы Hermes знал, куда
-слать сообщения. Затем:
+слать сообщения. Задачу заводит `install.sh` (тот же вопрос «Сделать?», что в шаге 3); вручную:
 
 ```bash
 hermes cron create "every 1m" --no-agent --script flows_remind.py --deliver telegram --name flows-reminders

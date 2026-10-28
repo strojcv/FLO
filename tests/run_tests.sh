@@ -421,6 +421,34 @@ echo 'x = "rewrite"' > "$T/hh/hermes-agent/gateway/run_inbound.py"
 echo 'emit("session:reset")' > "$T/hh/hermes-agent/gateway/slash_commands_session.py"
 check "auto: свежий Hermes (по исходникам) — new" "через /new" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/auto.json" bash "$ROOT/setup-commands.sh"
 
+echo "▸ setup-hermes.sh: голосовые, /new, напоминания"
+SH() { env "$@" bash "$ROOT/setup-hermes.sh" </dev/null; }   # SH [ПЕРЕМЕННАЯ=…]
+printf 'model: x\n' > "$T/hh/config.yaml"
+check "чужой HERMES_HOME — только подсказки" "hermes cron create" SH HERMES_HOME="$T/hh" FLO_YES=1
+check "…hermes не вызывается" "0" bash -c "cat $T/hermes-calls 2>/dev/null | wc -l | tr -d ' '"
+mkdir -p "$HOME/.hermes"; printf 'model: x\n' > "$HOME/.hermes/config.yaml"
+check "без терминала и без FLO_YES — не спрашивает, подсказки" "Не сделано" SH
+check "…объясняет, зачем" "кнопки с одного нажатия" SH
+check "…hermes не вызывается" "0" bash -c "cat $T/hermes-calls 2>/dev/null | wc -l | tr -d ' '"
+if command -v script >/dev/null; then   # ответ в настоящем терминале
+  TTY() { (sleep 1; printf '%s\n' "$1"; sleep 1) | if script --version >/dev/null 2>&1   # ответ — после вопроса
+          then LC_ALL=C script -qec "bash $ROOT/setup-hermes.sh" /dev/null; else LC_ALL=C script -q /dev/null bash "$ROOT/setup-hermes.sh"; fi; }
+  check "в терминале «н» (локаль C) — не делает" "Не сделано" TTY "н"
+  check "…hermes не вызывается" "0" bash -c "cat $T/hermes-calls 2>/dev/null | wc -l | tr -d ' '"
+fi
+check "FLO_YES=1 — копия config.yaml" "Копия настроек" SH FLO_YES=1
+check "…блок stt" 'config set stt.providers.flows.command python3 '"$HOME"'/.hermes/scripts/flows_stt.py {input_path} {output_path}' cat "$T/hermes-calls"
+check "…stt.provider flows" "config set stt.provider flows" cat "$T/hermes-calls"
+check "…/new без подтверждения" "config set approvals.destructive_slash_confirm false" cat "$T/hermes-calls"
+check "…задача напоминаний" "cron create every 1m --no-agent --script flows_remind.py --deliver telegram --name flows-reminders" cat "$T/hermes-calls"
+check "…копия на месте" "config.yaml.bak-flows-" ls "$HOME/.hermes"
+: > "$T/hermes-calls"
+printf 'stt:\n  provider: flows\n  providers:\n    flows:\n      command: "python3 x/flows_stt.py"\napprovals:\n  destructive_slash_confirm: false\n' > "$HOME/.hermes/config.yaml"
+mkdir -p "$HOME/.hermes/cron"; echo '{"jobs": [{"script": "flows_remind.py"}]}' > "$HOME/.hermes/cron/jobs.json"
+check "всё на месте — ничего не делает" "✓ Настройки Hermes на месте" SH FLO_YES=1
+empty "…hermes не вызывается" cat "$T/hermes-calls"
+rm -rf "$HOME/.hermes"
+
 echo "▸ миграция со «следующей точки»"
 export FLOWS_NOW=2026-11-02T10:00
 NEXT() { printf -- '---\ntype: point\nflow: %s\nstatus: next\ncreated: 2026-11-01\ntitle: ""\n---\n\n# Следующая точка\n\n## Задачи\n\n- 2026-11-01: %s\n' "$1" "$2" > "$T/brain/flows/$1/_следующая.md"; }
