@@ -1,5 +1,23 @@
 # Установка и обновление — шпаргалка
 
+## Быстрая установка
+
+Нужно: сервер с Hermes, бот в Telegram отвечает, в чате с ботом дана команда `/sethome`;
+на сервере `python3` (3.9+), `git`, `ffmpeg`. Всё — под пользователем, от которого работает Hermes:
+
+```bash
+git clone https://github.com/strojcv/FLO.git ~/flows-organizer
+bash ~/flows-organizer/install.sh          # тесты, установка; в конце — строки с ⚠
+# сделать строки с ⚠ (блок stt, подтверждение /new, задача напоминаний) и снова install.sh — ⚠ не будет
+bash ~/flows-organizer/setup-gigaam.sh     # расшифровка голосовых (GigaAM, ~225 МБ)
+hermes gateway restart
+```
+
+В Telegram — `/new`, затем `/list`. Обновление: `cd ~/flows-organizer && git pull && bash install.sh`,
+затем `/restart`. Ниже — то же подробно и вариант без git (FTP).
+
+---
+
 Ниже `<user>` — пользователь, от которого работает Hermes (его папка — `/home/<user>`).
 Если заливаешь по FTP под `root`, файлы будут принадлежать `root`, и `<user>` не сможет их менять — тогда нужен шаг 2.
 Через `git clone` или `rsync` под самим `<user>` шаги 1–2 не нужны.
@@ -7,7 +25,7 @@
 ## 1. Залить папку
 
 Папку целиком — в `/home/<user>/flows-organizer` (по FTP — с заменой, двоичный режим), или
-`git clone <адрес репозитория> ~/flows-organizer` под `<user>`.
+`git clone https://github.com/strojcv/FLO.git ~/flows-organizer` под `<user>`.
 
 ## 2. Отдать папку пользователю `<user>` (под root)
 
@@ -104,7 +122,7 @@ bash ~/flows-organizer/setup-gigaam.sh
 
 ## Обновление (после доработок)
 
-То же самое: шаги 1 → 2 → 3 → 4. Установщик напишет «Обновление <старая> → <новая>».
+Через git: `cd ~/flows-organizer && git pull && bash install.sh`, затем шаг 4. По FTP — шаги 1 → 2 → 3 → 4. Установщик напишет «Обновление <старая> → <новая>».
 Строки с ⚠ в конце вывода установщика — сделать.
 
 

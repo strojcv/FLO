@@ -2,7 +2,15 @@
 
 **FLO** (Flow Life Organizer) — официальное название проекта.
 
-> Установка и обновление на сервере по шагам — `readme-install.md`.
+**Установка** (на сервере с Hermes, под его пользователем):
+
+```bash
+git clone https://github.com/strojcv/FLO.git ~/flows-organizer
+bash ~/flows-organizer/install.sh
+```
+
+Дальше — строки с ⚠ из вывода установщика, `hermes gateway restart`, в Telegram `/new` и `/list`.
+По шагам, голосовые, обновление — [readme-install.md](readme-install.md).
 
 Голосом или текстом в Telegram ведёшь **потоки** работы. Hermes помнит, где ты остановился,
 ведёт задачи по точкам работы, хранит комментарии (и идеи с 💡) к точкам и выводы по потоку, ведёт календарь с напоминаниями
