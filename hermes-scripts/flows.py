@@ -141,6 +141,11 @@ STATUS_RU = {"open": "открыт", "paused": "на паузе", "closed": "з�
 PRIO_MAIN, PRIO_BG = 1, 2
 PRIO_LABEL = {PRIO_MAIN: "основной", PRIO_BG: "фоновый"}
 PRIO_MARKER = ".flo-priorities-2"   # в хранилище: приоритеты уже в новом виде (2 штуки)
+# Новые записи точки (задачи и контекст) — сверху списка (с 2026.11.12.4). Метка: в файлах уже этот
+# порядок (migrate один раз переворачивает старые списки, где новые были снизу).
+TASKS_MARKER = ".flo-newest-first"
+TASKS_MARKER_TEXT = ("Задачи и контекст в точках — новые сверху.\n"
+                     "Файл ставит flows.py; без него migrate один раз переворачивает эти списки.\n")
 BG_CMD = "background"
 
 
@@ -589,6 +594,16 @@ class Note:
                 lines.insert(after, "")
         self.body = "\n".join(lines) + "\n"
 
+    def set_entries(self, heading: str, entries: list[str]):
+        """Заменить записи раздела (тот же раздел, новый порядок)."""
+        lines = self.body.split("\n")
+        s, e = self._find_section(lines, heading)
+        if s is None:
+            return
+        tail = [""] if e < len(lines) else []
+        lines[s + 1:e] = [l for x in entries for l in x.split("\n")] + tail
+        self.body = "\n".join(lines)
+
     def drop_section(self, heading: str) -> list[str]:
         """Убрать раздел целиком (заголовок и записи); вернуть его записи."""
         lines = self.body.split("\n")
@@ -699,7 +714,7 @@ class Point:
         s = str(self.note.get("summary") or "").strip()
         if s:
             return s
-        for e in self.entries("context"):
+        for e in reversed(self.entries("context")):   # новые сверху — берём самую раннюю
             _, t = entry_parts(e)
             t = plain(t).strip()
             if t and not t.startswith("🎙"):
@@ -1169,6 +1184,11 @@ def start_next(flow: Flow, nxt: Point, title: str = "") -> Point:
     return Point(flow, path)
 
 
+def put_entry(note: "Note", key: str, entry: str):
+    """Запись в раздел точки — в начало (новые сверху): задачи, контекст."""
+    note.prepend_entry(HEADINGS[key], entry, before=HEADINGS["context"] if key == "tasks" else None)
+
+
 def route_point(f: Flow, key: str, spec: str | None = None, to_next: bool = False) -> Point:
     """Куда писать запись: всё — в хвост открытой точки (нет — создаётся). Явно названная прошлая
     точка (дата, номер) — в неё. «next» и to_next — старые слова, тоже открытая точка."""
@@ -1319,7 +1339,7 @@ def cmd_status(a):
             t = prev.briefs("context")
             if t:
                 print("     сделано:")
-                print("\n".join(bullets(t[-3:], "       ", 120)))
+                print("\n".join(bullets(t[:3], "       ", 120)))   # новые сверху
         cm = [brief(plain(entry_parts(e)[1])) for e in f.comments()[:3]]
         if cm:
             print("   Свежие комментарии:")
@@ -1357,9 +1377,13 @@ FOOTER = "/calendar   /list"   # нижний ряд кнопок каждого
 HIDE_PREFIX = "x"        # кнопки скрытия задач в карточке: /x1, /x2 …
 EXPAND_PREFIX = "f"      # раскрыть/свернуть одну запись (задачу, комментарий): /f1, /f2 …
 BACK_CMD = "back"        # из комментариев — назад в карточку точки
-HIGHLIGHT_MARK = "👉"
-BTN_INDENT = " " * 6     # кнопки записи — отдельной строкой под ней: отступ, /fK, промежуток, /xK
-BTN_GAP = " " * 12    # в каталоге — поток, на котором стоит (стоял до /list) указатель
+HIGHLIGHT_MARK = "👉"    # в каталоге — поток, на котором стоит (стоял до /list) указатель
+# Панель кнопок записи — отдельной строкой под ней: «⚪ /f1     ⚪ /x1». Нечего раскрывать — на месте
+# /fK прочерк («⚪ ——»), чтобы /xK всегда стоял на своём месте и его не нажать вместо раскрытия.
+BTN_INDENT = " " * 3
+BTN_MARK = "⚪"
+BTN_GAP = " " * 5
+BTN_EMPTY = "——"
 # кнопки карточки точки: комментарии (под датой), выполненные (внизу); /point — последняя точка
 CARD_CMDS = {"comments": "comments", "done": "done"}
 CARD_KEYS = {"комментарии": "comments", "комментарий": "comments", "comments": "comments",
@@ -1431,9 +1455,8 @@ def _expandable(e: str) -> bool:
 
 
 def _shown_line(e: str, path: Path, shown: list, open_: set[str], x_n: int = 0) -> str:
-    """Запись (свёрнута или раскрыта) и под ней строка кнопок: /fK (если есть что раскрыть),
-    промежуток, /xK (x_n — номер пункта; 0 — без него). /xK всегда на своём месте, даже без /fK.
-    Запись — в shown."""
+    """Запись (свёрнута или раскрыта) и под ней панель кнопок: ⚪ /fK (если есть что раскрыть, иначе
+    ⚪ ——), промежуток, ⚪ /xK (x_n — номер пункта; 0 — без него). Запись — в shown."""
     shown.append((path, e))
     k = len(shown)
     line = _entry_line(e, full=e in open_)
@@ -1441,10 +1464,9 @@ def _shown_line(e: str, path: Path, shown: list, open_: set[str], x_n: int = 0) 
     can_x = 0 < x_n <= LIST_LINKS
     if not (can_f or can_x):
         return line
-    fk = f"/{EXPAND_PREFIX}{k}"
-    left = fk if can_f else " " * (2 * len(fk))
-    right = f"{BTN_GAP}/{HIDE_PREFIX}{x_n}" if can_x else ""
-    return f"{line}\n{BTN_INDENT}{left}{right}".rstrip()
+    left = f"{BTN_MARK} " + (f"/{EXPAND_PREFIX}{k}" if can_f else BTN_EMPTY)
+    right = f"{BTN_GAP}{BTN_MARK} /{HIDE_PREFIX}{x_n}" if can_x else ""
+    return f"{line}\n{BTN_INDENT}{left}{right}"
 
 
 def _print_items(caption: str, path: Path, es: list[str], items: list, shown: list, open_: set[str],
@@ -1915,6 +1937,7 @@ def cmd_new_flow(a):
         die("Приоритет: 1 — основной, 2 — фоновый.")
     if not all_flows() and not (BRAIN / PRIO_MARKER).exists():
         (BRAIN / PRIO_MARKER).write_text(PRIO_MARKER_TEXT, "utf-8")   # пустое хранилище — сразу новый вид
+        (BRAIN / TASKS_MARKER).write_text(TASKS_MARKER_TEXT, "utf-8")
     with Mutation(f"Новый поток: {title}"):
         d = FLOWS_DIR / slug
         d.mkdir(parents=True)
@@ -1991,7 +2014,7 @@ def cmd_add(a):
             p = f.ensure_open() if a.summary else None
         else:
             p = route_point(f, key, a.point, a.next)
-            p.note.append_entry(HEADINGS[key], entry)
+            put_entry(p.note, key, entry)
             path, where = p.path, f" · {p.where}"
         if a.summary:
             p.note.set("summary", a.summary.strip())
@@ -2181,6 +2204,7 @@ def cmd_migrate(a):
     _migrate_priorities(flows, report)
     _migrate_comments(all_flows(), report)     # перечитывает потоки после прошлых шагов
     _migrate_idea_marks(all_flows(), report)
+    _migrate_tasks_order(all_flows(), report)
     print("✓ Миграция:\n" + "\n".join(f"– {r}" for r in report) if report else "✓ Миграция не нужна.")
 
 
@@ -2278,6 +2302,29 @@ def _migrate_comments(flows: list[Flow], report: list[str]):
     report.append(f"комментарии — одни на поток: из точек перенесено {moved} (потоков {len(todo)})")
 
 
+def _migrate_tasks_order(flows: list[Flow], report: list[str]):
+    """Новые задачи и контекст — сверху (2026.11.12.4): один раз перевернуть эти списки во всех точках
+    (раньше новые дописывались снизу). Метка в хранилище — второй раз не переворачивать."""
+    marker = BRAIN / TASKS_MARKER
+    if marker.exists():
+        return
+    if not flows:
+        marker.write_text(TASKS_MARKER_TEXT, "utf-8")
+        return
+    with Mutation("Миграция: новые задачи и контекст — сверху"):
+        n = 0
+        for f in flows:
+            for p in f.points():
+                for key in POINT_KEYS:
+                    es = p.entries(key)
+                    if len(es) > 1:
+                        p.note.set_entries(HEADINGS[key], list(reversed(es)))
+                        n += 1
+                p.note.save()
+        marker.write_text(TASKS_MARKER_TEXT, "utf-8")
+    report.append(f"задачи и контекст — новые сверху: перевёрнуто списков {n}")
+
+
 IDEA_MARK_RE = re.compile(rf"^([-*]\s+(?:\d{{4}}-\d{{2}}-\d{{2}}:\s*)?(?:✓\s*)?)(\*\*)?{OLD_IDEA_MARK}\s*")
 
 
@@ -2343,7 +2390,7 @@ def cmd_undo(a):
             else:
                 target = path if POINT_RE.match(path.name) else f.ensure_open().path
                 note = Note(target)
-                note.append_entry(heading, la["entry"])
+                put_entry(note, key, la["entry"])
             note.save()
             st["last_add"] = {"path": str(target), "heading": heading, "entry": la["entry"]}
             print(f"✓ Перенёс последнюю запись в раздел «{caption}».")
@@ -2395,7 +2442,7 @@ def cmd_attach(a):
         dur = note.get("duration", "")
         label = f"🎙 Голосовая {dur}".strip()
         entry = make_entry(f"[[flows/{f.slug}/sources/{vid}|{label}]]")
-        p.note.append_entry(HEADINGS["context"], entry)
+        put_entry(p.note, "context", entry)
         p.note.save()
         set_current(f.slug)
     print(f"✓ Запись {vid} привязана: {f.title} · {p.where}. "
@@ -2451,7 +2498,7 @@ def cmd_inbox_move(a):
             where = ""
         else:
             p = route_point(f, key, a.point)
-            p.note.append_entry(HEADINGS[key], line)
+            put_entry(p.note, key, line)
             p.note.save()
             where = f" · {p.where}"
         content = INBOX_NOTES.read_text("utf-8").split("\n")
@@ -3037,7 +3084,8 @@ def cmd_init(a):
         (TEMPLATES_DIR / "Поток.md", TPL_FLOW),
         (TAGS_FILE, TAGS_STARTER),
         (INBOX_NOTES, "# Входящие заметки\n\n"),
-    ) + (((BRAIN / PRIO_MARKER, PRIO_MARKER_TEXT),) if not any(FLOWS_DIR.glob(f"*/{FLOW_FILE}")) else ()):
+    ) + (((BRAIN / PRIO_MARKER, PRIO_MARKER_TEXT), (BRAIN / TASKS_MARKER, TASKS_MARKER_TEXT))
+         if not any(FLOWS_DIR.glob(f"*/{FLOW_FILE}")) else ()):
         if not path.exists():
             path.write_text(content, "utf-8")
             created.append(str(path.relative_to(BRAIN)))
