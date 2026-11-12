@@ -231,6 +231,8 @@ def short(s: str, n: int = 120) -> str:
 
 BRIEF_RE = re.compile(r"^\*\*(.+?)\*\*\.?\s*")
 BRIEF_LEN = 70          # запись без заголовка в списках обрезается до этой длины
+TITLE_LEN = 140         # заголовок в свёрнутом виде (тезис в 1–2 строки) длиннее — обрезается
+FULL_INDENT = "   "     # раскрытая запись в несколько строк: строки текста — с этим отступом
 
 
 HIDDEN_MARK = "✓ "      # скрытая запись: текст остаётся в файле, в Telegram не показывается
@@ -1434,19 +1436,28 @@ def _save_card(f: Flow, kind: str, items: list[tuple[Path, str]], p: Point | Non
 
 
 def _entry_line(e: str, tail: str = "", full: bool = False) -> str:
-    """Строка пункта: «– заголовок»; full — «– Заголовок — весь текст» без обрезки."""
+    """Строка пункта: «– заголовок» (до TITLE_LEN знаков); full — весь текст без обрезки и с
+    разбивкой хозяина: в одну строку — «– Заголовок — текст», в несколько (пункты, абзацы) —
+    заголовок, ниже каждая строка текста с отступом."""
     mark = "✓" if is_hidden(e) else "–"
     if not full:
-        return f"{mark} {short(brief(plain(entry_parts(e)[1])), 100)}{tail}"
-    text = " ".join(plain(entry_parts(e)[1]).split())
-    if text.startswith(HIDDEN_MARK.strip()):
-        text = text[len(HIDDEN_MARK.strip()):].lstrip()
-    m = BRIEF_RE.match(text)
+        return f"{mark} {short(brief(plain(entry_parts(e)[1])), TITLE_LEN)}{tail}"
+    lines = [" ".join(l.split()) for l in plain(entry_parts(e)[1]).split("\n")]
+    lines = [l for l in lines if l]
+    first = lines[0] if lines else ""
+    if first.startswith(HIDDEN_MARK.strip()):
+        first = first[len(HIDDEN_MARK.strip()):].lstrip()
+    title, m = "", BRIEF_RE.match(first)
     if m:
-        rest, title = text[m.end():].strip(), m.group(1).strip().rstrip(".")
-        same = norm(rest).rstrip(".") == norm(title)    # заголовок и есть весь текст — не повторять
-        text = title + (f" — {rest}" if rest and not same else "")
-    return f"{mark} {text}{tail}"
+        title, first = m.group(1).strip().rstrip("."), first[m.end():].strip()
+    body = [l for l in [first] + lines[1:] if l]
+    if title and len(body) == 1 and norm(body[0]).rstrip(".") == norm(title):
+        body = []                                   # заголовок и есть весь текст — не повторять
+    if not title:
+        title, body = (body[0], body[1:]) if body else ("", [])
+    if len(body) <= 1:
+        return f"{mark} {title}" + (f" — {body[0]}" if body else "") + tail
+    return f"{mark} {title}" + "".join(f"\n{FULL_INDENT}{l}" for l in body) + tail
 
 
 def _expandable(e: str) -> bool:
