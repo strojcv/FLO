@@ -1378,11 +1378,11 @@ HIDE_PREFIX = "x"        # кнопки скрытия задач в карто�
 EXPAND_PREFIX = "f"      # раскрыть/свернуть одну запись (задачу, комментарий): /f1, /f2 …
 BACK_CMD = "back"        # из комментариев — назад в карточку точки
 HIGHLIGHT_MARK = "👉"    # в каталоге — поток, на котором стоит (стоял до /list) указатель
-# Панель кнопок записи — отдельной строкой под ней: «⚪ /f1     ⚪ /x1». Нечего раскрывать — на месте
-# /fK прочерк («⚪ ——»), чтобы /xK всегда стоял на своём месте и его не нажать вместо раскрытия.
+# Панель кнопок записи — отдельной строкой под ней: «/f1  ▫️  /x1» (квадратик — перебивка между
+# кнопками вместо пустых пробелов). Нечего раскрывать — на месте /fK прочерк («——  ▫️  /x1»), чтобы
+# /xK всегда стоял на своём месте и его не нажать вместо раскрытия.
 BTN_INDENT = " " * 3
-BTN_MARK = "⚪"
-BTN_GAP = " " * 5
+BTN_SEP = "  ▫️  "
 BTN_EMPTY = "——"
 # кнопки карточки точки: комментарии (под датой), выполненные (внизу); /point — последняя точка
 CARD_CMDS = {"comments": "comments", "done": "done"}
@@ -1455,8 +1455,8 @@ def _expandable(e: str) -> bool:
 
 
 def _shown_line(e: str, path: Path, shown: list, open_: set[str], x_n: int = 0) -> str:
-    """Запись (свёрнута или раскрыта) и под ней панель кнопок: ⚪ /fK (если есть что раскрыть, иначе
-    ⚪ ——), промежуток, ⚪ /xK (x_n — номер пункта; 0 — без него). Запись — в shown."""
+    """Запись (свёрнута или раскрыта) и под ней панель кнопок: /fK (если есть что раскрыть, иначе ——),
+    квадратик, /xK (x_n — номер пункта; 0 — без него). Запись — в shown."""
     shown.append((path, e))
     k = len(shown)
     line = _entry_line(e, full=e in open_)
@@ -1464,8 +1464,8 @@ def _shown_line(e: str, path: Path, shown: list, open_: set[str], x_n: int = 0) 
     can_x = 0 < x_n <= LIST_LINKS
     if not (can_f or can_x):
         return line
-    left = f"{BTN_MARK} " + (f"/{EXPAND_PREFIX}{k}" if can_f else BTN_EMPTY)
-    right = f"{BTN_GAP}{BTN_MARK} /{HIDE_PREFIX}{x_n}" if can_x else ""
+    left = f"/{EXPAND_PREFIX}{k}" if can_f else BTN_EMPTY
+    right = f"{BTN_SEP}/{HIDE_PREFIX}{x_n}" if can_x else ""
     return f"{line}\n{BTN_INDENT}{left}{right}"
 
 
