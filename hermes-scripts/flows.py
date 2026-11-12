@@ -13,7 +13,6 @@ flows.py — «потоковый органайзер» для Hermes Agent.
     _audio/ГГГГ/ММ/<id>.*        исходное аудио (в git не попадает)
     _templates/                  шаблоны для ручного создания точек в Obsidian
     flows/<slug>/_поток.md       шапка потока + оглавление точек (оглавление собирается само)
-    flows/<slug>/_выводы.md      выводы потока (у точек выводов нет — там комментарии)
     flows/<slug>/ГГГГ-ММ-ДД.md   точки потока (вторая точка за день: ГГГГ-ММ-ДД-2.md)
     flows/<slug>/_следующая.md   следующая точка: копит задачи и идеи до начала работы
     календарь/<дата>-<имя>.md    события и напоминания (с потоком или без)
@@ -111,11 +110,11 @@ IDEA_MARK = "💡"                  # идея — комментарий с л�
 FORWARD_KEYS = ("tasks",)
 NEXT_FILE = "_следующая.md"   # старая схема: «следующая точка»; flows.py migrate вливает её в открытую
 NEXT_SPECS = ("next", "следующая", "следующую", "след")
-SECTIONS_HINT = "Раздел: контекст | задачи | комментарии | идеи | выводы (у потока)"
-GLOBAL_HEADINGS = {"conclusions": "Глобальные выводы"}
-# Выводы — отдельный файл в папке потока, записи в разделе GLOBAL_SECTION
-GLOBAL_FILES = {"conclusions": "_выводы.md"}
-GLOBAL_SECTION = "Записи"
+SECTIONS_HINT = "Раздел: контекст | задачи | комментарии | идеи"
+# Выводов нет с 2026.11.12: «вывод» — обычный комментарий. Старый файл выводов потока migrate
+# переносит в комментарии открытой точки и удаляет (OLD_GLOBAL_SECTION — раздел записей в нём).
+OLD_CONCLUSIONS_FILE = "_выводы.md"
+OLD_GLOBAL_SECTION = "Записи"
 TOC_HEADING = "Точки"
 SECTION_ALIASES = {
     "контекст": "context", "сделано": "context", "context": "context", "ctx": "context",
@@ -123,7 +122,7 @@ SECTION_ALIASES = {
     "шаг": "tasks", "шаги": "tasks", "следующий": "tasks", "дальше": "tasks", "next": "tasks",
     "комментарии": "comments", "комментарий": "comments", "коммент": "comments", "comments": "comments",
     "comment": "comments",
-    "выводы": "conclusions", "вывод": "conclusions", "conclusions": "conclusions",   # только у потока
+    "выводы": "comments", "вывод": "comments", "conclusions": "comments",   # выводов нет — это комментарий
     "идеи": "ideas", "идея": "ideas", "ideas": "ideas", "idea": "ideas",   # → комментарий с 💡
 }
 STATUS_ALIASES = {
@@ -788,22 +787,11 @@ class Flow:
         """Точка с задачами «на сейчас» — открытая."""
         return self.open_point()
 
-    def global_note(self, key: str) -> Note:
-        return Note(self.dir / GLOBAL_FILES[key])
-
-    def global_entries(self, key: str) -> list[str]:
-        return self.global_note(key).entries(GLOBAL_SECTION)
-
     def last_touch(self) -> date:
         cands = [p.last_date() for p in self.points()[-2:]]
         nxt = self.next_point()
         if nxt:
             cands.append(nxt.last_date())
-        for key in GLOBAL_FILES:
-            for e in self.global_entries(key):
-                d, _ = entry_parts(e)
-                if d and d <= today():
-                    cands.append(d)
         if self.created:
             cands.append(self.created)
         cands = [d for d in cands if d != date.min]
@@ -1078,18 +1066,7 @@ def point_body(title: str) -> str:
 
 
 def flow_body(slug: str, title: str) -> str:
-    links = " · ".join(f"[[flows/{slug}/{GLOBAL_FILES[k][:-3]}|{h}]]" for k, h in GLOBAL_HEADINGS.items())
-    return f"\n# {title}\n\n{links}\n\n## {TOC_HEADING}\n"
-
-
-def create_global_note(f: Flow, key: str) -> Note:
-    note = f.global_note(key)
-    if not note.path.exists():
-        note.set("type", "flow-global")
-        note.set("flow", f.slug)
-        note.body = (f"\n# {GLOBAL_HEADINGS[key]}\n\n"
-                     f"Поток: [[flows/{f.slug}/{FLOW_FILE[:-3]}|{f.title}]]\n\n## {GLOBAL_SECTION}\n")
-    return note
+    return f"\n# {title}\n\n## {TOC_HEADING}\n"
 
 
 def new_point_path(flow: Flow, day: date) -> Path:
@@ -1314,8 +1291,11 @@ LIST_PREFIX = str(CFG.get("list_cmd_prefix", ""))   # "" → /1, /2…; если
 LIST_LINKS = 30                                       # столько команд /1…/30 заводит setup-commands.sh
 
 
-FOOTER = "/conclusions   /calendar   /list   /point"   # нижний ряд кнопок каждого экрана
+FOOTER = "/calendar   /list"   # нижний ряд кнопок каждого экрана (/point работает, но в ряд не выводится)
 HIDE_PREFIX = "x"        # кнопки скрытия задач в карточке: /x1, /x2 …
+EXPAND_PREFIX = "f"      # раскрыть/свернуть одну запись (задачу, комментарий): /f1, /f2 …
+BACK_CMD = "back"        # из комментариев — назад в карточку точки
+HIGHLIGHT_MARK = "👉"    # в каталоге — поток, на котором стоит (стоял до /list) указатель
 # кнопки карточки точки: комментарии (под датой), выполненные (внизу); /point — последняя точка
 CARD_CMDS = {"comments": "comments", "done": "done"}
 CARD_KEYS = {"комментарии": "comments", "комментарий": "comments", "comments": "comments",
@@ -1323,7 +1303,6 @@ CARD_KEYS = {"комментарии": "comments", "комментарий": "co
              "выводы": "comments", "vyvody": "comments",   # старые кнопки
              "идеи": "comments", "ideas": "comments", "idei": "comments"}   # идеи — в комментариях
 NAV_CMDS = {"prev": "prev", "next": "next", "point": "point"}
-VIEW_CMDS = {"full": "full", "zip": "zip"}   # вид задач в карточке: полный текст / короткие заголовки
 CURRENT_MARK = "⚡"      # открытая точка — первый символ шапки карточки (у завершённых POINT_MARK)
 PRIO_MARKS = {1: "🔴", 2: "🟡", 3: "🟢"}   # приоритет: в каталоге — перед заголовком, в потоке — после названия
 
@@ -1332,7 +1311,6 @@ def prio_mark(p: int) -> str:
     return PRIO_MARKS.get(p, PRIO_MARKS[3])
 POINT_MARK = "📍"
 COMMENTS_MARK = "💬"     # первый символ шапки на экране комментариев
-CONCLUSIONS_MARK = "🧠"     # экран выводов потока (/conclusions)
 
 
 def cmd_open(a):
@@ -1342,10 +1320,25 @@ def cmd_open(a):
     render_view()
 
 
-def _save_card(f: Flow, kind: str, items: list[tuple[Path, str]], p: Point | None = None):
+def _screen_id(f: Flow, p: Point | None, kind: str) -> list[str]:
+    """Чей экран: поток, точка, карточка или комментарии (раскрытое /fK живёт, пока экран тот же)."""
+    return [f.slug, p.stem if p else "", "comments" if kind == "comments" else "card"]
+
+
+def _expanded(f: Flow, p: Point | None, kind: str) -> set[str]:
+    ex = load_state().get("expanded") or {}
+    return set(ex.get("keys") or []) if ex.get("screen") == _screen_id(f, p, kind) else set()
+
+
+def _save_card(f: Flow, kind: str, items: list[tuple[Path, str]], p: Point | None = None,
+               shown: list[tuple[Path, str]] | None = None):
+    """Запомнить экран: items — пункты для /xK, shown — все строки по порядку для /fK."""
     st = load_state()
     st["last_card"] = {"flow": f.slug, "kind": kind, "items": [[str(x), e] for x, e in items],
+                       "shown": [[str(x), e] for x, e in shown or []],
                        "point": "" if not p or p.is_open else p.stem}
+    if (st.get("expanded") or {}).get("screen") != _screen_id(f, p, kind):
+        st.pop("expanded", None)              # другой экран — раскрытое сбрасывается
     save_state(st)
 
 
@@ -1359,14 +1352,29 @@ def _entry_line(e: str, tail: str = "", full: bool = False) -> str:
         text = text[len(HIDDEN_MARK.strip()):].lstrip()
     m = BRIEF_RE.match(text)
     if m:
-        rest = text[m.end():].strip()
-        text = m.group(1).strip().rstrip(".") + (f" — {rest}" if rest else "")
+        rest, title = text[m.end():].strip(), m.group(1).strip().rstrip(".")
+        same = norm(rest).rstrip(".") == norm(title)    # заголовок и есть весь текст — не повторять
+        text = title + (f" — {rest}" if rest and not same else "")
     return f"{mark} {text}{tail}"
 
 
-def _print_items(caption: str, path: Path, es: list[str], items: list, hide: bool = True, full: bool = False):
-    """Пункты с короткими заголовками (full — полным текстом); hide — с кнопками /xK (скрытые не
-    показываются), иначе все, скрытые (сделанные) — с ✓."""
+def _expandable(e: str) -> bool:
+    """Есть что раскрыть: полный текст длиннее короткой строки."""
+    return _entry_line(e, full=True).rstrip(".…") != _entry_line(e).rstrip(".…")
+
+
+def _shown_line(e: str, path: Path, shown: list, open_: set[str], x_tail: str = "") -> str:
+    """Строка записи с кнопкой /fK (если есть что раскрыть) и хвостом /xK; запись — в shown."""
+    shown.append((path, e))
+    k = len(shown)
+    f_tail = f"  /{EXPAND_PREFIX}{k}" if k <= LIST_LINKS and _expandable(e) else ""
+    return _entry_line(e, f_tail + x_tail, full=e in open_)
+
+
+def _print_items(caption: str, path: Path, es: list[str], items: list, shown: list, open_: set[str],
+                 hide: bool = True):
+    """Пункты короткими заголовками (раскрытые /fK — полным текстом); hide — с кнопками /xK
+    (скрытые не показываются), иначе все, скрытые (сделанные) — с ✓."""
     if hide:
         es = [e for e in es if not is_hidden(e)]
     if not es:
@@ -1377,11 +1385,7 @@ def _print_items(caption: str, path: Path, es: list[str], items: list, hide: boo
         if hide:
             items.append((path, e))
             tail = f"  /{HIDE_PREFIX}{len(items)}" if len(items) <= LIST_LINKS else ""
-        print(_entry_line(e, tail, full))
-
-
-def _visible_globals(f: Flow, key: str) -> list[str]:
-    return [e for e in f.global_entries(key) if not is_hidden(e)]
+        print(_shown_line(e, path, shown, open_, tail))
 
 
 def _point_head(f: Flow, p: Point | None, mark: str = "") -> str:
@@ -1406,53 +1410,52 @@ def _print_nav(f: Flow, p: Point):
 def print_point_card(f: Flow, p: Point | None, done_open: bool = False):
     """Карточка точки: дата, задачи (в открытой — с /xK, в завершённой — сделанные с ✓),
     под датой — комментарии, внизу листание по точкам. В открытой под задачами /done (N);
-    done_open (кнопка /done) — вместо ссылки раскрытый список выполненных с ✓."""
+    done_open (кнопка /done) — вместо ссылки раскрытый список выполненных с ✓. /fK — раскрыть одну."""
     print(_point_head(f, p))
     items: list[tuple[Path, str]] = []
+    shown: list[tuple[Path, str]] = []
+    kind = "done" if done_open and p and p.is_open else "point"
     if not p:
         print("точек пока нет")
         _save_card(f, "point", items, p)
         print("\n" + FOOTER)
         return
     print(f"/{CARD_CMDS['comments']} ({len(p.entries('comments'))})")
-    full = bool(load_state().get("tasks_full"))
-    caption = f"Задачи /{VIEW_CMDS['zip' if full else 'full']}"   # переключатель вида — перед двоеточием
+    open_ = _expanded(f, p, kind)
     if p.is_open:
-        _print_items(caption, p.path, p.entries("tasks"), items, full=full)
+        _print_items("Задачи", p.path, p.entries("tasks"), items, shown, open_)
         if not items:
             print("\nзадач пока нет")
         done = [e for e in p.entries("tasks") if is_hidden(e)]
         if done and done_open:
-            print(f"\nВыполнено ({len(done)}):\n" + "\n".join(_entry_line(e, full=full) for e in done))
+            print(f"\nВыполнено ({len(done)}):")
+            for e in done:
+                print(_shown_line(e, p.path, shown, open_))
         elif done:
             print(f"\n/{CARD_CMDS['done']} ({len(done)})")
     else:
-        _print_items(caption, p.path, p.entries("tasks"), items, hide=False, full=full)
+        _print_items("Задачи", p.path, p.entries("tasks"), items, shown, open_, hide=False)
         if not p.entries("tasks"):
             print("\nзадач не было")
-    _save_card(f, "done" if done_open and p.is_open else "point", items, p)
+    _save_card(f, kind, items, p, shown)
     _print_nav(f, p)
     print("\n" + FOOTER)
 
 
 def print_comments(f: Flow, p: Point | None):
-    """/comments: шапка точки, комментарии к ней; /prev и /next листают точки, оставаясь здесь."""
-    print(_point_head(f, p, COMMENTS_MARK) + "\nКомментарии")
+    """/comments: шапка точки, комментарии к ней (/fK — раскрыть один), /back — назад в карточку;
+    /prev и /next листают точки, оставаясь здесь."""
+    print(_point_head(f, p, COMMENTS_MARK) + f"\nКомментарии  /{BACK_CMD}")
     es = p.entries("comments") if p else []
-    print("\n" + "\n".join(_entry_line(e) for e in es) if es else "\nкомментариев пока нет")
-    _save_card(f, "comments", [])
+    shown: list[tuple[Path, str]] = []
+    if es:
+        open_ = _expanded(f, p, "comments")
+        print("\n" + "\n".join(_shown_line(e, p.path, shown, open_) for e in es))
+    else:
+        print("\nкомментариев пока нет")
+    _save_card(f, "comments", [], p, shown)
     if p:
         _print_nav(f, p)
-    print("\n" + FOOTER)
-
-
-def print_conclusions(f: Flow):
-    """/conclusions: все выводы потока (они у потока целиком, не у точек)."""
-    g = f.global_entries("conclusions")
-    print(f"{CONCLUSIONS_MARK} Выводы · {f.title} ({len(g)})")
-    print("\n" + "\n".join(f"– {plain(t)}" + (f" ({dm(d)})" if d else "") for d, t in map(entry_parts, g))
-          if g else "\nвыводов пока нет — скажи «вывод: …»")
-    _save_card(f, "conclusions", [])
     print("\n" + FOOTER)
 
 
@@ -1465,7 +1468,7 @@ def _pointer_point(f: Flow, ptr: dict) -> Point | None:
 
 
 def render_view(screen: str = "", if_asked: bool = False):
-    """Экран: указатель есть — его точка (или её комментарии, выводы потока, если так просили), нет — список.
+    """Экран: указатель есть — его точка (или её комментарии, если так просили), нет — список.
     if_asked (хук после /new): печатать, только если /new запустила кнопка (свежая пометка show_at от go)."""
     st = load_state()
     asked = st.pop("show_at", "")
@@ -1477,12 +1480,10 @@ def render_view(screen: str = "", if_asked: bool = False):
         if not fresh:                         # обычный /new из меню — тишина
             return save_state(st)
     screen = screen or st.pop("screen", "")
-    sflow = st.pop("screen_flow", "")
+    st.pop("screen_flow", None)               # пометка старого экрана выводов (до 2026.11.12)
     save_state(st)
     if screen == "calendar":
         return print_calendar()
-    if screen == "conclusions":
-        return print_conclusions(resolve_flow(sflow or get_current()))
     cur = get_current()
     if not cur or screen in ("list", "list3"):
         return print_catalog(screen == "list3")
@@ -1495,8 +1496,8 @@ def render_view(screen: str = "", if_asked: bool = False):
 
 
 def go(target: list[str]):
-    """Переставить указатель (без вывода): list | list3 | open N | prev | next | point | card комментарии
-    | conclusions | calendar (последние два указатель не трогают — разовый экран)."""
+    """Переставить указатель (без вывода): list | list3 | open N | prev | next | point | back
+    | card комментарии | calendar (календарь указатель не трогает — разовый экран)."""
     what = norm(target[0]) if target else "list"
     rest = target[1:]
     if what in ("list", "list3"):
@@ -1505,17 +1506,12 @@ def go(target: list[str]):
         st = load_state()
         st["screen"] = "calendar"
         return save_state(st)
-    if what in ("conclusions", "insights", "выводы"):   # выводы потока под указателем или последней точки
-        st = load_state()
-        slug = get_current() or (st.get("last_point") or {}).get("flow")
-        if not slug:
-            die("Сначала открой поток: /list и номер.\n\n" + FOOTER)
-        st["screen"], st["screen_flow"] = "conclusions", resolve_flow(slug).slug
-        return save_state(st)
+    if what in (BACK_CMD, "назад-к-точке") and get_current():   # из комментариев — карточка той же точки
+        return set_pointer(get_current(), (get_pointer() or {}).get("point", ""))
     if what == "open":
         f = resolve_flow(rest[0] if rest else None)
         return set_pointer(f.slug)
-    if what in ("point", "last", "tochka", "точка"):
+    if what in ("point", "last", "tochka", "точка", BACK_CMD, "назад-к-точке"):
         cur = get_current()
         if cur:                               # указатель уже на точке — её карточку и покажем,
             st = load_state()                 # а если она уже на экране — последнюю точку потока
@@ -1533,12 +1529,6 @@ def go(target: list[str]):
     f = resolve_flow(cur)
     ptr = get_pointer() or {}
     p = _pointer_point(f, ptr)
-    if what in ("full", "zip", "полный", "короткий"):   # вид задач: запоминается, экран — тот же
-        st = load_state()
-        st["tasks_full"] = what in ("full", "полный")
-        save_state(st)
-        kind = (st.get("last_card") or {}).get("kind")
-        return set_pointer(f.slug, ptr.get("point", ""), screen="done" if kind == "done" else "")
     if what in ("card", "карточка"):
         key = CARD_KEYS.get(norm(rest[0]) if rest else "")
         if not key:
@@ -1552,7 +1542,7 @@ def go(target: list[str]):
         q = pts[max(0, min(k, len(pts) - 1))]
         stay = (load_state().get("last_card") or {}).get("kind") == "comments"   # листаем комментарии
         return set_pointer(f.slug, "" if q.is_open else q.stem, screen="comments" if stay else "")
-    die(f"Не понимаю «{what}». Можно: list, list3, open N, prev, next, point, card комментарии, full, zip, conclusions, calendar")
+    die(f"Не понимаю «{what}». Можно: list, list3, open N, prev, next, point, back, card комментарии, calendar")
 
 
 def cmd_go(a):
@@ -1613,6 +1603,31 @@ def cmd_hide(a):
     render_view(kind if kind in CARD_CMDS else "point")
 
 
+def cmd_expand(a):
+    """Кнопка /fK: раскрыть K-ю запись последнего экрана (задачу в карточке, комментарий) полным
+    текстом; повторное нажатие — свернуть. Перерисовывает тот же экран, указатель не трогает."""
+    st = load_state()
+    card = st.get("last_card") or {}
+    kind = card.get("kind")
+    if kind not in ("point", "done", "comments"):
+        die("Раскрывать здесь нечего — открой точку: /list и номер потока.\n\n" + FOOTER)
+    shown = card.get("shown") or []
+    if not 1 <= a.n <= len(shown):
+        die(f"На последнем экране нет записи {a.n} — открой его ещё раз.\n\n" + FOOTER)
+    f = resolve_flow(card["flow"])
+    p = _pointer_point(f, {"point": card.get("point", "")})
+    sid = _screen_id(f, p, kind)
+    ex = st.get("expanded") or {}
+    keys = set(ex.get("keys") or []) if ex.get("screen") == sid else set()
+    keys ^= {shown[a.n - 1][1]}               # раскрыта — свернуть, свёрнута — раскрыть
+    st["expanded"] = {"screen": sid, "keys": sorted(keys)}
+    save_state(st)
+    if kind == "comments":
+        print_comments(f, p)
+    else:
+        print_point_card(f, p, done_open=kind == "done")
+
+
 def _hide_event(stems: list[str], n: int):
     """/xK на экране календаря: закрыть K-е событие (status: done, как прошедшее)."""
     if not 1 <= n <= len(stems):
@@ -1656,6 +1671,8 @@ def print_catalog(low: bool = False):
     live = [f for f in all_flows() if f.status != "closed"]
     shown = sorted([f for f in live if (f.priority >= 3) == low],
                    key=lambda f: (f.priority, f.status != "open", f.point_started(), f.title))
+    st = load_state()                         # выделяем поток указателя (после /list — где он стоял)
+    here = get_current() or (st.get("last_point") or {}).get("flow")
     print(f"{prio_mark(3)} ПОТОКИ 3-ГО ПРИОРИТЕТА" if low else "ПОТОКИ")
     if not shown:
         print("\nпусто")
@@ -1668,7 +1685,8 @@ def print_catalog(low: bool = False):
             print()
         marks = (" · пауза" if f.status == "paused" else "") + (" ⚠" if f.is_stale() else "")
         num = f"/{LIST_PREFIX}{i}" if i <= LIST_LINKS else f"{i}."
-        print(f"{num} {f.title} — {dm(f.point_started().date())}{marks}")
+        mark = f"{HIGHLIGHT_MARK} " if f.slug == here else ""
+        print(f"{mark}{num} {f.title} — {dm(f.point_started().date())}{marks}")
     st = load_state()
     st["last_list"] = [f.slug for f in shown]
     save_state(st)
@@ -1705,13 +1723,6 @@ def cmd_show(a):
         print("Теги: " + ", ".join(f.tags))
     if f.aliases:
         print("Другие названия: " + ", ".join(map(str, f.aliases)))
-    for key, heading in GLOBAL_HEADINGS.items():
-        es = f.global_entries(key)
-        if es:
-            print(f"\n{heading} ({len(es)}):")
-            for e in es[-5:]:
-                d, t = entry_parts(e)
-                print(f"• {short(plain(t), 200)}" + (f" ({dm(d)})" if d else ""))
     pts = f.points()
     if pts:
         print("\nПуть:")
@@ -1744,8 +1755,6 @@ def cmd_point(a):
     if tags:
         print("Теги: " + ", ".join(tags if isinstance(tags, list) else [tags]))
     keys = [section_key(a.section)[0]] if a.section else list(HEADINGS)
-    if keys == ["conclusions"]:
-        die(f"Выводы — у потока, не у точки: collect {f.slug} выводы")
     for key in keys:
         es = p.entries(key)
         print(f"\n{HEADINGS[key]}:" + ("" if es else " —"))
@@ -1759,21 +1768,7 @@ def cmd_point(a):
 def cmd_collect(a):
     f = resolve_flow(a.flow)
     key, idea = section_key(a.section)
-    if key == "conclusions":                  # выводы — только у потока, весь список
-        g = f.global_entries(key)
-        print(f"🧠 Выводы потока «{f.title}» ({len(g)})" + ("" if g else "\n\nВыводов пока нет."))
-        for e in g:
-            d, t = entry_parts(e)
-            print(f"– {plain(t)}" + (f" ({dm(d)})" if d else ""))
-        return
     print(f"{f.title}: {'идеи' if idea else HEADINGS[key].lower()} по всем точкам")
-    if key in GLOBAL_HEADINGS:
-        g = f.global_entries(key)
-        if g:
-            print(f"\n★ {GLOBAL_HEADINGS[key]}:")
-            for e in g:
-                _, t = entry_parts(e)
-                print(f"- {plain(t)}")
     total = 0
     nxt = f.next_point()
     for p in f.points() + ([nxt] if nxt else []):
@@ -1841,8 +1836,6 @@ def cmd_new_flow(a):
         note.body = flow_body(slug, title)
         note.save()
         f = Flow(d)
-        for key in GLOBAL_FILES:
-            create_global_note(f, key).save()
         create_point(f, today())
         set_pointer(slug)
     print(f"✓ Поток «{title}» создан ({slug}), P{a.priority}. Он теперь текущий.")
@@ -1897,8 +1890,6 @@ def cmd_add(a):
     key, idea = section_key(a.section)
     text = read_text_input(a.text)
     src = _source_link(f, a.src) if a.src else None
-    if key == "conclusions":                  # выводы — только у потока
-        return _add_global(f, key, with_brief(text, a.short), src)
     with Mutation(f"{f.title}: +{HEADINGS[key].lower()}"):
         p = route_point(f, key, a.point, a.next)
         entry = make_entry(with_brief(text, a.short), src)
@@ -1938,30 +1929,6 @@ def cmd_brief(a):
         p.note.body = p.note.body.replace(old, new, 1)
         p.note.save()
     print(f"✓ {f.title} · {p.where} · {heading}: «{a.title.strip().rstrip('.')}»")
-
-
-def cmd_add_global(a):
-    f = resolve_flow(a.flow)
-    key = SECTION_ALIASES.get(norm(a.section))
-    if key not in GLOBAL_HEADINGS:
-        die("Глобально бывают только выводы. Идея — комментарий с 💡: add <поток> идеи \"…\"")
-    text = read_text_input(a.text)
-    src = None
-    if a.from_point:
-        pt = f.resolve_point(a.from_point)
-        src = f"→ [[flows/{f.slug}/{pt.stem}|{dm(pt.day)}]]"
-    _add_global(f, key, text, src)
-
-
-def _add_global(f: Flow, key: str, text: str, src: str | None):
-    set_current(f.slug)
-    with Mutation(f"{f.title}: +{GLOBAL_HEADINGS[key].lower()}"):
-        entry = make_entry(text, src)
-        note = create_global_note(f, key)
-        note.append_entry(GLOBAL_SECTION, entry)
-        note.save()
-        remember_last_add(note.path, GLOBAL_SECTION, entry)
-    print(f"✓ {f.title} · {GLOBAL_HEADINGS[key]} +1")
 
 
 def cmd_summary(a):
@@ -2067,7 +2034,8 @@ def cmd_migrate(a):
     """Старая схема → новая (запускает install.sh, можно повторять): «следующая точка» вливается в
     открытую (или сама становится открытой); у незакрытого потока без открытой точки — новая пустая.
     Раздел точки «Выводы» → «Комментарии» (2026.10.27.1); записи раздела «Идеи» → в «Комментарии»
-    с 💡, раздел убирается (2026.10.27.6).
+    с 💡, раздел убирается (2026.10.27.6); выводы потока (`_выводы.md`) → в комментарии открытой
+    точки, файл и ссылка на него в `_поток.md` удаляются (2026.11.12).
     Ничего не удаляет без переноса; до и после — коммит в git хранилища."""
     report = []
     old = re.compile(rf"^##\s+{OLD_COMMENTS_HEADING}\s*$", re.M)
@@ -2102,9 +2070,37 @@ def cmd_migrate(a):
         report.append(f"раздел «{OLD_IDEAS_HEADING}» убран: {len(with_ideas)} файл(ов), идей перенесено в комментарии: {moved}")
     flows = all_flows()
     todo = [f for f in flows if f.next_point() or (f.status != "closed" and not f.open_point())]
-    if not todo:
-        print("✓ Миграция:\n" + "\n".join(f"– {r}" for r in report) if report else "✓ Миграция не нужна.")
+    if todo:
+        _migrate_points(todo, report)
+    _migrate_conclusions(flows, report)
+    print("✓ Миграция:\n" + "\n".join(f"– {r}" for r in report) if report else "✓ Миграция не нужна.")
+
+
+def _migrate_conclusions(flows: list[Flow], report: list[str]):
+    """Выводов нет (2026.11.12): записи `_выводы.md` → комментарии открытой точки (дата сохраняется),
+    файл удаляется, ссылка на него из шапки `_поток.md` — тоже."""
+    link = re.compile(r"\[\[flows/[^/\]]+/_выводы\|[^\]]*\]\](?: · )?")   # ссылку на _идеи оставляем
+    olds = [f for f in flows if (f.dir / OLD_CONCLUSIONS_FILE).exists()
+            or link.search((f.dir / FLOW_FILE).read_text("utf-8"))]
+    if not olds:
         return
+    with Mutation("Миграция: выводы потока → комментарии, выводов больше нет"):
+        for f in olds:
+            src = f.dir / OLD_CONCLUSIONS_FILE
+            es = Note(src).entries(OLD_GLOBAL_SECTION) if src.exists() else []
+            if es:
+                p = f.open_point() or create_point(f, today())
+                for e in es:
+                    p.note.append_entry(HEADINGS["comments"], e)
+                p.note.save()
+            if src.exists():
+                src.unlink()
+            fp = f.dir / FLOW_FILE
+            fp.write_text(re.sub(r"\n\n\n+", "\n\n", link.sub("", fp.read_text("utf-8"))), "utf-8")
+            report.append(f"{f.title}: выводы убраны" + (f", {len(es)} перенесено в комментарии" if es else ""))
+
+
+def _migrate_points(todo: list[Flow], report: list[str]):
     with Mutation("Миграция: одна открытая точка на поток"):
         for f in todo:
             nxt, op = f.next_point(), f.open_point()
@@ -2124,7 +2120,6 @@ def cmd_migrate(a):
                 create_point(f, today())
                 report.append(f"{f.title}: открыта новая точка")
             f._points = None
-    print("✓ Миграция:\n" + "\n".join(f"– {r}" for r in report))
 
 
 def cmd_undo(a):
@@ -2141,12 +2136,7 @@ def cmd_undo(a):
             key, idea = section_key(a.to)
             if idea:
                 la["entry"] = mark_idea(la["entry"])
-            if path.name in GLOBAL_FILES.values() or key not in HEADINGS:
-                if key not in GLOBAL_FILES:
-                    die("Глобально бывают только выводы.")
-                target, heading, caption = path.parent / GLOBAL_FILES[key], GLOBAL_SECTION, GLOBAL_HEADINGS[key]
-            else:
-                target, heading, caption = path, HEADINGS[key], HEADINGS[key]
+            target, heading, caption = path, HEADINGS[key], HEADINGS[key]
             note.save()
             note = Note(target)
             note.append_entry(heading, la["entry"])
@@ -2251,8 +2241,6 @@ def cmd_inbox_move(a):
     line = notes[a.n - 1]
     f = resolve_flow(a.flow)
     key, idea = section_key(a.section)
-    if key not in HEADINGS:
-        die("Вывод — у потока: add-global <поток> выводы «текст», потом удали заметку.")
     with Mutation(f"{f.title}: заметка из входящих"):
         p = route_point(f, key, a.point)
         p.note.append_entry(HEADINGS[key], mark_idea(line) if idea else line)  # дата сохраняется исходная
@@ -2275,9 +2263,6 @@ def _point_files(include_sources: bool, flow: Flow | None = None):
     flows = [flow] if flow else all_flows()
     for f in flows:
         yield f, f.dir / FLOW_FILE
-        for name in GLOBAL_FILES.values():
-            if (f.dir / name).exists():
-                yield f, f.dir / name
         for p in f.points():
             yield f, p.path
         if (f.dir / NEXT_FILE).exists():
@@ -2300,7 +2285,7 @@ def cmd_find(a):
             rel = f"{f.slug}/{path.stem}"
             if tag in {norm(t) for t in tags}:
                 title = note.get("title") or note.h1()
-                what = "весь поток" if path.name == FLOW_FILE or path.name in GLOBAL_FILES.values() else "вся точка"
+                what = "весь поток" if path.name == FLOW_FILE else "вся точка"
                 results.append(f"{rel} · {what}: {short(str(title), 80)}")
             for line in note.body.split("\n"):
                 if re.search(r"(?<![\w])#" + re.escape(tag) + r"(?![\w-])", norm(line)):
@@ -2860,7 +2845,7 @@ def cmd_init(a):
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="flows.py", description="Потоковый органайзер: потоки → точки → задачи/контекст/комментарии (идеи — с 💡); выводы — у потока.")
+        prog="flows.py", description="Потоковый органайзер: потоки → точки → задачи/контекст/комментарии (идеи — с 💡).")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def add(name, fn, help_, aliases=()):
@@ -2878,7 +2863,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("flow", help="номер из последнего каталога или название")
 
     p = add("go", cmd_go, "переставить указатель без вывода (для кнопок через /new)")
-    p.add_argument("target", nargs="*", help="list | list3 | open N | prev | next | point | card комментарии | conclusions | calendar")
+    p.add_argument("target", nargs="*", help="list | list3 | open N | prev | next | point | back | card комментарии | calendar")
 
     p = add("view", cmd_view, "экран после /new: точка под указателем, нет указателя — список")
     p.add_argument("--if-asked", action="store_true", help="только после кнопки (go), обычный /new — пусто")
@@ -2895,6 +2880,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("hide", cmd_hide, "скрыть пункт K последней карточки (кнопки /x1, /x2…)")
     p.add_argument("n", type=int)
 
+    p = add("expand", cmd_expand, "раскрыть/свернуть запись K последнего экрана (кнопки /f1, /f2…)")
+    p.add_argument("n", type=int)
+
     p = add("unhide", cmd_unhide, "вернуть скрытую задачу/идею по куску текста")
     p.add_argument("flow")
     p.add_argument("find")
@@ -2907,7 +2895,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("point", cmd_point, "показать точку (по умолчанию текущую)")
     p.add_argument("flow", nargs="?")
     p.add_argument("point", nargs="?", help="дата 2026-10-23, номер из show, last или next")
-    p.add_argument("--section", help="контекст | задачи | комментарии | выводы (у потока)")
+    p.add_argument("--section", help="контекст | задачи | комментарии")
     p.add_argument("--raw", action="store_true", help="не убирать ссылки")
 
     p = add("collect", cmd_collect, "все записи раздела по всем точкам потока")
@@ -2957,7 +2945,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("add", cmd_add, "дописать запись в раздел точки")
     p.add_argument("flow")
-    p.add_argument("section", help="контекст | задачи | комментарии | идеи (= комментарий с 💡) | выводы (у потока)")
+    p.add_argument("section", help="контекст | задачи | комментарии | идеи (= комментарий с 💡); «выводы» — тоже комментарии")
     p.add_argument("text", help="текст или - (из stdin)")
     p.add_argument("--next", action="store_true", help="устарело: всё пишется в открытую точку")
     p.add_argument("--point", help="дата или номер прошлой точки; по умолчанию — открытая")
@@ -2970,12 +2958,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("find", help="кусок текста записи")
     p.add_argument("title", help="заголовок, 2–6 слов")
     p.add_argument("--point", help="дата, номер или next; по умолчанию — открытая, иначе следующая")
-
-    p = add("add-global", cmd_add_global, "вывод потока (то же, что add … выводы)")
-    p.add_argument("flow")
-    p.add_argument("section", help="выводы")
-    p.add_argument("text")
-    p.add_argument("--from", dest="from_point", help="точка-источник")
 
     p = add("title", cmd_title, "заголовок точки")
     p.add_argument("flow")

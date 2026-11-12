@@ -61,14 +61,14 @@ check "идея в «.» — комментарий с 💡 в поток под
 check "ещё комментарий" "Комментарии +1" $F add реклама комментарии "Ставка 5\$ — мало"
 check "undo --to идеи — комментарий стал идеей" "в раздел «Комментарии» (💡 идея)" $F undo --to идеи
 check "…в файле с лампочкой" "💡 Ставка 5\$ — мало" cat "$T/brain/flows/reklama/2026-10-20.md"
-check "вывод — в выводы потока, не в точку" "Реклама · Глобальные выводы +1" $F add реклама вывод "Пиксель ставить до запуска"
-check "…в _выводы.md" "Пиксель ставить до запуска" cat "$T/brain/flows/reklama/_выводы.md"
-lacks "…а в точке его нет" "Пиксель ставить" cat "$T/brain/flows/reklama/2026-10-20.md"
-check "point выводы — подсказка про поток" "Выводы — у потока" $F point реклама 2026-10-20 --section выводы
+check "вывод — обычный комментарий открытой точки" "20.10 «Кабинет настроен» · Комментарии +1" $F add реклама вывод "Пиксель ставить до запуска"
+check "…в точке, в комментариях" "Пиксель ставить до запуска" $F point реклама 2026-10-20 --section выводы
+lacks "…файла выводов нет" "_выводы" ls "$T/brain/flows/reklama"
+lacks "…и ссылки на него в шапке потока" "_выводы" cat "$T/brain/flows/reklama/_поток.md"
 check "карточка: ⚡ — первый символ у открытой точки" "⚡ Реклама · 🔴
 Точка 1 из 1 · 20.10.2026
 «Кабинет настроен»
-/comments (3)" $F open реклама
+/comments (4)" $F open реклама
 lacks "…P1 буквами больше нет" "· P1" $F view
 lacks "…кнопки идей нет" "/ideas" $F view
 check "/x1 — выполнено" "✓ Выполнено: Проверить пиксель" $F hide 1
@@ -98,27 +98,35 @@ lacks "…только дата создания" "22.10.2026" $F view
 check "…сделанная с галочкой" "✓ Проверить пиксель" $F view
 lacks "…без кнопок скрытия" "/x1" $F view
 check "…вперёд можно" "/next ▶" $F view
-check "/comments — 💬 первым символом шапки" "💬 Реклама · 🔴
+check "/comments — 💬 первым символом шапки, /back в третьей строке" "💬 Реклама · 🔴
 Точка 1 из 2 · 20.10.2026
 «Кабинет настроен»
-Комментарии
+Комментарии  /back
 
 – Пиксель — до запуска" $F card комментарии
 check "…внизу листание и нижний ряд" "/next ▶
 
-/conclusions   /calendar   /list   /point" $F card комментарии
+/calendar   /list" $F card комментарии
 check "/next из комментариев — комментарии следующей точки" "💬 Реклама · 🔴
 Точка 2 из 2 · 22.10.2026
-Комментарии
+Комментарии  /back
 
 комментариев пока нет" $F nav next
 check "/prev — снова комментарии прошлой" "– Пиксель — до запуска" $F nav prev
 check "/new после комментариев — точка под указателем" "Точка 1 из 2 · 20.10.2026
 «Кабинет настроен»
-/comments (3)" $F view
+/comments (4)" $F view
 check "старое «card выводы» → комментарии" "💬 Реклама" $F card выводы
-check "нижний ряд" "/conclusions   /calendar   /list   /point" $F view
+check "нижний ряд" "
+
+/calendar   /list" $F view
 lacks "…без /new" "/new" $F view
+lacks "…без /point" "/point" $F view
+lacks "…без /conclusions" "/conclusions" $F view
+check "/back из комментариев — карточка той же точки" "📍 Реклама · 🔴
+Точка 1 из 2" bash -c "$F nav card комментарии >/dev/null; $F nav back"
+check "…через /new (go + view)" "Задачи" bash -c "$F go card комментарии; $F view >/dev/null; $F go back; $F view"
+check "…/back с карточки — та же точка (не прыжок на последнюю)" "Точка 1 из 2" $F nav back
 empty "обычный /new (из меню) — тишина" $F view --if-asked
 check "…после кнопки (go) — экран" "Задачи" bash -c "$F go point; $F view --if-asked"
 empty "…пометка разовая: следующий /new снова молчит" $F view --if-asked
@@ -147,13 +155,10 @@ check "go open" "Точка 2 из 2" bash -c "$F go open реклама; $F vie
 check "show: прошлая точка" "Прошлая точка 20.10 «Кабинет настроен»" $F show таргет
 check "show: задачи на сейчас" "Сделать статичные креативы" $F show таргет
 check "задача в другой поток" "Задачи +1" $F add звонки задачи "Написать скрипт"
-check "глобальный вывод" "Глобальные выводы +1" $F add-global реклама выводы "С лицом лучше" --from 2026-10-20
-check "глобальные выводы — отдельный файл" "С лицом лучше" cat "$T/brain/flows/reklama/_выводы.md"
-check "общих идей потока нет" "Идея — комментарий с 💡" $F add-global реклама идеи "Отзывы в рекламе"
+check "add-global больше нет" "invalid choice" $F add-global реклама выводы "С лицом лучше"
 check "выжимка точки" "кратко — Кабинет и пиксель" $F summary реклама "Кабинет и пиксель" --point 2026-10-20
 check "оглавление потока: выжимка" "Кабинет настроен]] — Кабинет и пиксель" cat "$T/brain/flows/reklama/_поток.md"
-check "«покажи выводы» — весь список потока" "🧠 Выводы потока «Реклама» (2)" $F collect реклама выводы
-check "…с выводом из записи" "– Пиксель ставить до запуска" $F collect реклама выводы
+check "«покажи выводы» — это комментарии по точкам" "Реклама: комментарии по всем точкам" $F collect реклама выводы
 check "collect комментарии — по точкам" "Пиксель — до запуска" $F collect реклама комментарии
 check "поиск по тегу" "#продажи" $F find --tag продажи
 check "status: на чём остановились" "Остановились: 20.10 «Кабинет настроен»" $F status
@@ -212,7 +217,11 @@ check "/list: запись порядок не меняет" "/1 Сайт — 28
 check "/1 — тот же поток, что в последнем каталоге" "⚡ Сайт" at 2026-10-30T09:07 $F open 1
 check "новая точка в Сайте" "завершена" at 2026-10-30T09:07 $F new-point сайт
 check "/list: открыл новую точку — в конец своего приоритета, дата — текущей точки" "/1 Реклама — 29.10
-/2 Сайт — 30.10" at 2026-10-30T09:07 $F list
+👉 /2 Сайт — 30.10" at 2026-10-30T09:07 $F list
+check "…👉 — поток, где стоял указатель (после /list — тот же)" "👉 /2 Сайт" at 2026-10-30T09:07 $F list
+check "…открыл другой поток — 👉 переехал" "👉 /1 Реклама" bash -c "FLOWS_NOW=2026-10-30T09:07 $F open 1 >/dev/null; FLOWS_NOW=2026-10-30T09:07 $F list"
+lacks "…и только у него" "👉 /2" at 2026-10-30T09:07 $F list
+$F open 2 >/dev/null                   # указатель обратно на Сайт, как было
 check "убрать тестовый поток" "удалён" at 2026-10-30T09:07 $F delete-flow сайт --force
 check "/list3: только 3-й приоритет" "/1 Гитара" at 2026-10-30T09:07 $F list --low
 lacks "/list3: без 1-го" "Реклама" at 2026-10-30T09:07 $F list --low
@@ -248,7 +257,7 @@ check "/calendar: с датой по времени, ⏰ — когда напо
 4. Купить зимнюю резину  /x4
 5. Съездить на дачу  /x5
 
-/conclusions   /calendar   /list   /point" $F nav calendar
+/calendar   /list" $F nav calendar
 check "кнопка через /new: go + view" "🗓 Календарь" bash -c "$F go calendar; $F view"
 check "сегодняшнее событие — ⚡ после номера, перед датой" "1. ⚡ сб 15:00 31.10
    Пойти к стоматологу  /x1" at 2026-10-31T09:00 $F calendar
@@ -339,56 +348,64 @@ check "теперь в списке он" "– Сверка участников
 check "заголовок можно поменять" "«Сверка с Олей»" $F brief запуск "сверить финальное" "Сверка с Олей"
 lacks "старого заголовка нет" "Сверка участников" $F show запуск
 check "кусок не найден" "нет записи" $F brief запуск "чего-то нет" "Х"
-check "карточка: кнопки скрытия" "– Рассылка неоплатившим  /x1" $F open запуск
-check "вторая задача — /x2" "– Сверка с Олей  /x2" $F open запуск
+check "карточка: кнопки скрытия и раскрытия" "Задачи:
+– Рассылка неоплатившим  /f1  /x1" $F open запуск
+check "вторая задача — /f2  /x2" "– Сверка с Олей  /f2  /x2" $F open запуск
 check "/x1 скрывает" "✓ Выполнено: Рассылка неоплатившим" $F hide 1
 lacks "…в карточке её нет" "Рассылка неоплатившим" $F open запуск
 check "…счётчик выполненных" "/done (1)" $F open запуск
-check "/done: открытые задачи с /xK на месте" "– Сверка с Олей  /x1" $F nav card done
+check "/done: открытые задачи с /xK на месте" "– Сверка с Олей  /f1  /x1" $F nav card done
 check "…/x на раскрытой — остаётся раскрытой" "✓ Сверка с Олей" $F hide 1
 check "…/point с раскрытой — та же точка, свёрнуто" "/done (2)" $F nav point
 check "…вернул задачу" "Сверка с Олей" $F unhide запуск "Сверка с Олей"
-check "…номера пересчитаны" "– Сверка с Олей  /x1" $F open запуск
-check "переключатель вида в заголовке задач" "Задачи /full:" $F open запуск
-check "/full — полный текст, с заголовком" "– Сверка с Олей — Сверить финальное количество участников в канале со списком купивших, это делает Оля, потом сообщить мне  /x1" $F nav full
-check "…переключатель стал /zip" "Задачи /zip:" $F view
-check "…вид запоминается" "Задачи /zip:" $F open запуск
-lacks "…короткой строки нет" "– Сверка с Олей  /x1" $F open запуск
-check "…раскрытые выполненные — тоже полностью" "✓ Рассылка неоплатившим — Сделать рассылку по тем, кто создал счёт и не оплатил. Касается всех." $F nav card done
-check "…/zip на раскрытой — остаётся раскрытой" "Выполнено (1):" $F nav zip
-check "…и снова коротко" "– Сверка с Олей  /x1" $F view
-check "…переключатель снова /full" "Задачи /full:" $F view
+check "…номера пересчитаны" "– Сверка с Олей  /f1  /x1" $F open запуск
+lacks "общих /full и /zip больше нет" "/full" $F open запуск
+check "…go full — не понимаю" "Не понимаю «full»" $F go full
+check "/f1 — раскрыта только первая задача" "– Сверка с Олей — Сверить финальное количество участников в канале со списком купивших, это делает Оля, потом сообщить мне  /f1  /x1" $F expand 1
+check "…короткая задача без /f" "Задачи +1" $F add запуск задачи "Купить микрофон" --short "Купить микрофон"
+check "…раскрытое помнится на том же экране" "– Сверка с Олей — Сверить финальное" $F open запуск
+check "…у задачи из одного заголовка /f нет" "– Купить микрофон  /x2" $F view
+lacks "…и вторая не раскрылась" "Купить микрофон — " $F view
+check "…повторное /f1 — свернуть" "– Сверка с Олей  /f1  /x1" $F expand 1
+check "/done — у выполненных тоже /fK (номер после открытых)" "✓ Рассылка неоплатившим  /f3" $F nav card done
+check "…/f3 раскрывает выполненную" "✓ Рассылка неоплатившим — Сделать рассылку по тем, кто создал счёт и не оплатил. Касается всех.  /f3" $F expand 3
+check "…/x2 не сбрасывает раскрытое" "✓ Рассылка неоплатившим — Сделать" $F hide 2
+lacks "…открытые при этом свёрнуты" "Сверка с Олей — " $F nav card done
+check "…вернул микрофон" "Вернул" $F unhide запуск "микрофон"
+check "/f1, потом /prev или другой экран — раскрытое сбрасывается" "– Сверка с Олей  /f1  /x1" bash -c "$F expand 1 >/dev/null; $F nav card комментарии >/dev/null; $F nav back"
+check "/fK, которого нет" "нет записи 9" $F expand 9
+check "/fK на календаре — нечего раскрывать" "Раскрывать здесь нечего" bash -c "$F calendar >/dev/null; $F expand 1"
+$F nav point >/dev/null
 lacks "…и в списке потоков нет" "Рассылка неоплатившим" $F status
 check "…но в файле осталась" "✓ **Рассылка неоплатившим.**" bash -c "cat $T/brain/flows/zapusk-kursa/2026-11-01.md"
 check "пункта нет" "нет пункта 9" $F hide 9
 check "вернуть" "✓ Вернул: Рассылка неоплатившим" $F unhide запуск "рассылк"
 check "…снова видна" "Рассылка неоплатившим" $F open запуск
 
-echo "▸ идеи в комментариях, /conclusions"
+echo "▸ идеи и комментарии, /fK в комментариях, выводов нет"
 check "идея в поток — комментарий с 💡" "Комментарии 💡 +1" $F add запуск идеи "Сделать вебинар для неоплативших" --short "Вебинар"
 check "…в файле — заголовок с лампочкой" "**💡 Вебинар.** Сделать вебинар" bash -c "cat $T/brain/flows/zapusk-kursa/*.md"
-check "общей идеи нет" "Идея — комментарий с 💡" $F add-global запуск идеи "Партнёрка с блогерами"
-check "глобальный вывод" "+1" $F add-global запуск выводы "Рассылки работают лучше звонков"
+check "вывод — тоже комментарий" "Комментарии +1" $F add запуск выводы "Рассылки работают лучше звонков"
 check "Запуск курса — последний (точка открыта позже всех)" "/3 Запуск курса" $F list
+check "…и выделен: указатель был на нём" "👉 /3 Запуск курса" $F list
+$F nav point >/dev/null
 lacks "в карточке нет /ideas" "/ideas" $F open запуск
 lacks "…и идей под задачами" "Вебинар" $F open запуск
-check "/comments — идея с лампочкой" "Комментарии
+check "/comments — идея с лампочкой и /f1, вывод без /f" "Комментарии  /back
 
-– 💡 Вебинар" $F card комментарии
+– 💡 Вебинар  /f1
+– Рассылки работают лучше звонков" $F card комментарии
+check "/f1 в комментариях — раскрыт один комментарий" "– 💡 Вебинар — Сделать вебинар для неоплативших  /f1" $F expand 1
+check "…повторное /f1 — свернуть, экран — по-прежнему комментарии" "Комментарии  /back
+
+– 💡 Вебинар  /f1" $F expand 1
+$F expand 1 >/dev/null
+check "…/back — карточка, раскрытое комментариев не тянется" "Задачи:" $F nav back
+check "…снова в комментарии — свёрнуто" "– 💡 Вебинар  /f1" $F nav card комментарии
 check "старая кнопка /ideas → комментарии" "💬 Запуск курса" $F card идеи
 check "collect идеи — только с 💡" "**💡 Вебинар.**" $F collect запуск идеи
-check "/conclusions — выводы потока под указателем" "🧠 Выводы · Запуск курса (1)
-
-– Рассылки работают лучше звонков (01.11)
-
-/conclusions   /calendar   /list   /point" $F nav conclusions
-check "…через /new (go + view)" "🧠 Выводы · Запуск курса" bash -c "$F go conclusions; $F view"
-lacks "…разовый экран: следующий /new — карточка" "🧠" $F view
-check "/conclusions из каталога — поток последней точки" "🧠 Выводы · Запуск курса" bash -c "$F list >/dev/null; $F nav conclusions"
-check "/point после выводов — карточка точки" "⚡ Запуск курса" $F nav point
-check "выводов нет — подсказка" "выводов пока нет" bash -c "$F nav open звонки >/dev/null; $F nav conclusions"
+check "/conclusions больше нет" "Не понимаю «conclusions»" $F nav conclusions
 $F nav open запуск >/dev/null
-check "выводы потока — по просьбе" "– Рассылки работают лучше звонков" $F collect запуск выводы
 
 echo "▸ кнопки через /new: хук flows-nav"
 mkdir -p "$T/hh/scripts"; ln -s "$H/flows.py" "$T/hh/scripts/flows.py"
@@ -418,8 +435,8 @@ check "без свежего Hermes — режим exec" "без /new" env HERME
 check "…кнопка листания" 'command: "python3 '"$T"'/hh/scripts/flows.py nav prev"' cat "$T/hh/config.yaml"
 check "…чужая команда цела" '"mine":' cat "$T/hh/config.yaml"
 mkdir -p "$T/fakeha/hermes_cli"
-printf 'CMDS = [\n    CommandDef("new", "x", "S",\n               aliases=("reset",)),\n    CommandDef("stats", "y", "I",\n               aliases=("conclusions",)),\n]\n' > "$T/fakeha/hermes_cli/commands.py"
-check "имя кнопки = встроенная команда Hermes (и синоним) — предупреждение" "⚠ Кнопка /conclusions совпадает со встроенной командой Hermes" env HERMES_HOME="$T/hh" HERMES_AGENT_DIR="$T/fakeha" bash "$ROOT/setup-commands.sh"
+printf 'CMDS = [\n    CommandDef("new", "x", "S",\n               aliases=("reset",)),\n    CommandDef("stats", "y", "I",\n               aliases=("back",)),\n]\n' > "$T/fakeha/hermes_cli/commands.py"
+check "имя кнопки = встроенная команда Hermes (и синоним) — предупреждение" "⚠ Кнопка /back совпадает со встроенной командой Hermes" env HERMES_HOME="$T/hh" HERMES_AGENT_DIR="$T/fakeha" bash "$ROOT/setup-commands.sh"
 echo '{"nav_mode": "new"}' > "$T/nav.json"
 check "nav_mode new — через /new" "через /new" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
 check "…/prev → alias" 'target: "/new flows prev"' cat "$T/hh/config.yaml"
@@ -431,9 +448,12 @@ lacks "…её нет" '"tochka"' cat "$T/hh/config.yaml"
 check "…/point есть" 'target: "/new flows point"' cat "$T/hh/config.yaml"
 check "…/comments есть" 'target: "/new flows card комментарии"' cat "$T/hh/config.yaml"
 check "…/calendar есть" 'target: "/new flows calendar"' cat "$T/hh/config.yaml"
-check "…/conclusions — выводы потока" 'target: "/new flows conclusions"' cat "$T/hh/config.yaml"
+check "…/back — из комментариев в карточку" 'target: "/new flows back"' cat "$T/hh/config.yaml"
+lacks "…/conclusions убрана" '"conclusions"' cat "$T/hh/config.yaml"
 check "…/done — выполненные задачи" 'target: "/new flows card done"' cat "$T/hh/config.yaml"
-check "…/full, /zip — вид задач" 'target: "/new flows zip"' cat "$T/hh/config.yaml"
+lacks "…общие /full, /zip убраны" '"zip"' cat "$T/hh/config.yaml"
+check "…/f1 — раскрыть запись, exec" 'command: "python3 '"$T"'/hh/scripts/flows.py expand 1"' cat "$T/hh/config.yaml"
+check "…и /f30" '"f30":' cat "$T/hh/config.yaml"
 lacks "…/insights (встроенная Hermes) убрана" '"insights"' cat "$T/hh/config.yaml"
 check "повтор — без изменений" "уже на месте" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
 mkdir -p "$T/hh/hooks/flows-nav" "$T/hh/hermes-agent/gateway"
@@ -491,9 +511,22 @@ lacks "…старого заголовка нет" "## Выводы" cat "$T/br
 check "…повтор — не нужна" "Миграция не нужна" $F migrate
 printf '\n## Идеи\n\n- 2026-11-02: **Старая идея.** длинный текст\n- 2026-11-02: Идея без заголовка\n' >> "$T/brain/flows/old-b/2026-11-02.md"
 check "migrate: «Идеи» → комментарии с 💡" "идей перенесено в комментарии: 2" $F migrate
-check "…идеи среди комментариев" "– 💡 Старая идея
+check "…идеи среди комментариев" "– 💡 Старая идея  /f2
 – 💡 Идея без заголовка" $F card комментарии
 lacks "…раздела «Идеи» нет" "## Идеи" cat "$T/brain/flows/old-b/2026-11-02.md"
+printf -- '---\ntype: flow-global\nflow: old-b\n---\n# Глобальные выводы\n\n## Записи\n- 2026-10-27: **Не снимать продажи.** Нельзя снимать продажи после старта\n' > "$T/brain/flows/old-b/_выводы.md"
+python3 - "$T/brain/flows/old-b/_поток.md" <<'PY'
+import sys, pathlib
+p = pathlib.Path(sys.argv[1]); t = p.read_text()
+t = t.replace("\n## Точки", "\n[[flows/old-b/_выводы|Глобальные выводы]] · [[flows/old-b/_идеи|Глобальные идеи]]\n\n## Точки", 1)
+p.write_text(t)
+PY
+check "migrate: выводы потока → комментарии открытой точки" "Старый Б: выводы убраны, 1 перенесено в комментарии" $F migrate
+check "…вывод среди комментариев, с датой" "- 2026-10-27: **Не снимать продажи.**" cat "$T/brain/flows/old-b/2026-11-02.md"
+lacks "…файла выводов нет" "_выводы" ls "$T/brain/flows/old-b"
+lacks "…ссылки на выводы в шапке нет" "_выводы" cat "$T/brain/flows/old-b/_поток.md"
+check "…ссылка на старые идеи осталась" "[[flows/old-b/_идеи|Глобальные идеи]]" cat "$T/brain/flows/old-b/_поток.md"
+check "…повтор — не нужна" "Миграция не нужна" $F migrate
 check "…повтор — не нужна" "Миграция не нужна" $F migrate
 
 echo "▸ копилка"

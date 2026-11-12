@@ -4,11 +4,11 @@
 #   /1 … /30 — карточка открытой точки потока с этим номером из последнего каталога;
 #   /point — последняя открытая точка;  /prev, /next — листать точки потока;
 #   /comments — комментарии точки под указателем (идеи — среди них, с 💡);
-#   /full, /zip — задачи в карточке полным текстом / короткими заголовками (вид запоминается);
-#   /conclusions — выводы потока;  /calendar — календарь;
+#   /back — из комментариев назад в карточку точки;  /calendar — календарь;
 #   /x1 … /x30 — отметить выполненной (скрыть) задачу/идею с этим номером в последней карточке
-#                (на экране календаря — закрыть событие).
-# Режим кнопок перехода (всё, кроме /x…):
+#                (на экране календаря — закрыть событие);
+#   /f1 … /f30 — раскрыть/свернуть одну запись последнего экрана (задачу, комментарий).
+# Режим кнопок перехода (всё, кроме /x… и /f…):
 #   new  — кнопка = «/new flows <куда>»: хук flows-nav переставляет указатель, /new чистит контекст,
 #          тот же хук на session:reset присылает экран. Умеет ли Hermes — по его исходникам.
 #   exec — кнопка сразу запускает flows.py nav <куда>; контекст не чистится. Запасной режим.
@@ -43,13 +43,14 @@ cfg = pathlib.Path(os.environ.get("FLOWS_CONFIG", pathlib.Path.home() / ".config
 prefix = str(json.loads(cfg.read_text()).get("list_cmd_prefix", "")) if cfg.exists() else ""
 
 nav = {"list": "list", "list3": "list3", "point": "point", "prev": "prev", "next": "next",
-       "comments": "card комментарии", "done": "card done", "full": "full", "zip": "zip", "conclusions": "conclusions", "calendar": "calendar"}
+       "comments": "card комментарии", "done": "card done", "back": "back", "calendar": "calendar"}
 nav.update({f"{prefix}{i}": f"open {i}" for i in range(1, 31)})
 ours = {}
 for name, where in nav.items():
     ours[name] = (("alias", f"/new flows {where}") if mode == "new"
                   else ("exec", f"python3 {flows} nav {where}"))
 ours.update({f"x{i}": ("exec", f"python3 {flows} hide {i}") for i in range(1, 31)})
+ours.update({f"f{i}": ("exec", f"python3 {flows} expand {i}") for i in range(1, 31)})
 
 # Встроенная команда Hermes срабатывает раньше quick_commands — кнопка с тем же именем не дойдёт до нас
 builtin = set()
@@ -63,7 +64,8 @@ if builtin_src.exists():
 for name in sorted(n for n in ours if n in builtin):
     print(f"⚠ Кнопка /{name} совпадает со встроенной командой Hermes — Hermes перехватит её. Переименуй в setup-commands.sh и flows.py.")
 
-LEGACY = {"tochka", "nazad", "vpered", "vyvody", "idei", "ideas", "insights"}   # наши старые кнопки — убрать
+LEGACY = {"tochka", "nazad", "vpered", "vyvody", "idei", "ideas", "insights",
+          "conclusions", "full", "zip"}   # наши старые кнопки — убрать (выводов и общих /full, /zip нет с 2026.11.12)
 L = cy.read_text().split("\n")
 keep = []                                   # чужие команды из старого блока — сохраняем
 if "quick_commands:" in L:
@@ -74,7 +76,7 @@ if "quick_commands:" in L:
         m = re.match(r'^  ["\']?([^"\':\s]+)["\']?:\s*$', line)
         if m:
             cur = m.group(1)
-        if cur and cur not in ours and cur not in LEGACY and not re.fullmatch(r"[nx]?\d+", cur):
+        if cur and cur not in ours and cur not in LEGACY and not re.fullmatch(r"[nxf]?\d+", cur):
             keep.append(line)
     del L[s:e]
 new = ["quick_commands:"] + [l for l in keep if l.strip()]
@@ -87,6 +89,6 @@ if text == cy.read_text():
     print(f"✓ Кнопки уже на месте ({how})"); sys.exit(0)
 shutil.copy(cy, f"{cy}.bak-commands-{time.strftime('%Y%m%d-%H%M')}")
 cy.write_text(text)
-print(f"✓ Кнопки: /list, /list3, /point, /{prefix}1 … /{prefix}30, /prev, /next, /comments, /done, /full, /zip, /conclusions, /calendar, /x1 … /x30"
+print(f"✓ Кнопки: /list, /list3, /point, /{prefix}1 … /{prefix}30, /prev, /next, /comments, /done, /back, /calendar, /x1 … /x30, /f1 … /f30"
       f" ({how}) — нужен /restart")
 PY
