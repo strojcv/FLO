@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Заводит в ~/.hermes/config.yaml кнопки органайзера (quick_commands, без нейросети):
-#   /list  — каталог потоков 1-го и 2-го приоритета;  /list3 — 3-го приоритета;
+#   /list  — основные потоки;  /background — фоновые (2-й приоритет);
 #   /1 … /30 — карточка открытой точки потока с этим номером из последнего каталога;
 #   /point — последняя открытая точка;  /prev, /next — листать точки потока;
 #   /comments — комментарии точки под указателем (идеи — среди них, с 💡);
@@ -42,7 +42,7 @@ builtin_src = pathlib.Path(sys.argv[4]) / "hermes_cli" / "commands.py"   # вс�
 cfg = pathlib.Path(os.environ.get("FLOWS_CONFIG", pathlib.Path.home() / ".config/flows/config.json"))
 prefix = str(json.loads(cfg.read_text()).get("list_cmd_prefix", "")) if cfg.exists() else ""
 
-nav = {"list": "list", "list3": "list3", "point": "point", "prev": "prev", "next": "next",
+nav = {"list": "list", "background": "background", "point": "point", "prev": "prev", "next": "next",
        "comments": "card комментарии", "done": "card done", "back": "back", "calendar": "calendar"}
 nav.update({f"{prefix}{i}": f"open {i}" for i in range(1, 31)})
 ours = {}
@@ -65,7 +65,7 @@ for name in sorted(n for n in ours if n in builtin):
     print(f"⚠ Кнопка /{name} совпадает со встроенной командой Hermes — Hermes перехватит её. Переименуй в setup-commands.sh и flows.py.")
 
 LEGACY = {"tochka", "nazad", "vpered", "vyvody", "idei", "ideas", "insights",
-          "conclusions", "full", "zip"}   # наши старые кнопки — убрать (выводов и общих /full, /zip нет с 2026.11.12)
+          "conclusions", "full", "zip", "list3"}   # наши старые кнопки — убрать (с 2026.11.12–12.2)
 L = cy.read_text().split("\n")
 keep = []                                   # чужие команды из старого блока — сохраняем
 if "quick_commands:" in L:
@@ -89,6 +89,6 @@ if text == cy.read_text():
     print(f"✓ Кнопки уже на месте ({how})"); sys.exit(0)
 shutil.copy(cy, f"{cy}.bak-commands-{time.strftime('%Y%m%d-%H%M')}")
 cy.write_text(text)
-print(f"✓ Кнопки: /list, /list3, /point, /{prefix}1 … /{prefix}30, /prev, /next, /comments, /done, /back, /calendar, /x1 … /x30, /f1 … /f30"
+print(f"✓ Кнопки: /list, /background, /point, /{prefix}1 … /{prefix}30, /prev, /next, /comments, /done, /back, /calendar, /x1 … /x30, /f1 … /f30"
       f" ({how}) — нужен /restart")
 PY

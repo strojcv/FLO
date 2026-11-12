@@ -52,7 +52,7 @@ DEFAULT_CONFIG = {
     "brain": "~/brain",                                # где лежит хранилище
     "timezone": "UTC",      # в каком часовом поясе думать о датах
     "git_autosync": False,                             # pull перед изменением, commit+push после
-    "stale_days": {"1": 3, "2": 7, "3": 14},  # «давно не трогали» по приоритету
+    "stale_days": {"1": 7, "2": 14},  # «давно не трогали»: основные / фоновые (старый вид с "3" тоже читается)
     "current_flow_hours": 0,                           # сколько часов помнить указатель на поток (0 — пока не переключат)
     "remind_grace_hours": 12,                          # опоздавшее напоминание ещё шлём в этом окне
     "remind_pull_minutes": 5,                          # git pull в проверке напоминаний не чаще, чем раз в N минут
@@ -131,6 +131,25 @@ STATUS_ALIASES = {
     "closed": "closed", "close": "closed", "закрыт": "closed", "закрыть": "closed",
 }
 STATUS_RU = {"open": "открыт", "paused": "на паузе", "closed": "закрыт"}
+# Приоритетов два (с 2026.11.12.2): 1 — основные (видны в /list, никак не подписаны), 2 — фоновые
+# (/background). Старое «3» читается как 2; migrate один раз переводит старые 1,2,3 → 1,1,2.
+PRIO_MAIN, PRIO_BG = 1, 2
+PRIO_LABEL = {PRIO_MAIN: "основной", PRIO_BG: "фоновый"}
+PRIO_MARKER = ".flo-priorities-2"   # в хранилище: приоритеты уже в новом виде (2 штуки)
+BG_CMD = "background"
+
+
+def prio_value(v) -> int:
+    """priority из файла или от агента → 1 (основной) или 2 (фоновый); старое 3 → 2."""
+    s = norm(str(v))
+    if s in ("фон", "фоновый", "фоновые", "background", "bg"):
+        return PRIO_BG
+    if s in ("основной", "основные", "main"):
+        return PRIO_MAIN
+    n = int(s)
+    if n not in (1, 2, 3):
+        raise ValueError(s)
+    return PRIO_MAIN if n == 1 else PRIO_BG
 WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
 
 POINT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md$")
@@ -749,9 +768,9 @@ class Flow:
     @property
     def priority(self) -> int:
         try:
-            return min(max(int(str(self.note.get("priority", 2)).strip()), 1), 3)
+            return prio_value(self.note.get("priority", 1))
         except ValueError:
-            return 2
+            return 1
 
     @property
     def created(self) -> date | None:
@@ -815,7 +834,9 @@ class Flow:
         return max((p.stat().st_mtime for p in self.dir.glob("*.md")), default=0.0)
 
     def is_stale(self) -> bool:
-        limit = int(CFG["stale_days"].get(str(self.priority), 14))
+        sd = CFG["stale_days"]
+        old = "3" in sd                       # старый вид {"1","2","3"}: основные = «2», фоновые = «3»
+        limit = int(sd.get(str(self.priority + 1) if old else str(self.priority), 14))
         return self.status == "open" and days_ago(self.last_touch()) > limit
 
     def names(self) -> list[str]:
@@ -873,7 +894,7 @@ def resolve_flow(q: str | None) -> Flow:
         if not cur:
             die("Текущий поток не задан (указателя нет). Спроси хозяина, к какому потоку это; номера — status.")
         q = cur
-    if str(q).strip().isdigit():          # номер из последнего каталога /list или /list3
+    if str(q).strip().isdigit():          # номер из последнего каталога /list или /background
         last = load_state().get("last_list") or []
         i = int(str(q).strip())
         if 1 <= i <= len(last):
@@ -1139,7 +1160,8 @@ def build_index() -> str:
             out.append("")
             continue
         for f in sorted(fl, key=lambda f: (f.priority, -f.last_touch().toordinal())):
-            out.append(f"### [[flows/{f.slug}/_поток|{f.title}]] · P{f.priority} · посл. {dm(f.last_touch())}")
+            bg = " · фоновый" if f.priority == PRIO_BG else ""
+            out.append(f"### [[flows/{f.slug}/_поток|{f.title}]]{bg} · посл. {dm(f.last_touch())}")
             for p in reversed(f.points()[-2:]):
                 out.append(f"- {dm(p.day)} — {p.link()}" + (" (открыта)" if p.is_open else ""))
             nt = _next_tasks(f)
@@ -1253,7 +1275,8 @@ def cmd_status(a):
     for i, f in enumerate(opened, 1):
         stale = " ⚠ давно не трогали" if f.is_stale() else ""
         mark = " ◀ указатель" if f.slug == cur else ""
-        print(f"\n{i}. [P{f.priority}] {f.title}{mark} — посл. {dm(f.last_touch())}, {ago(f.last_touch())}{stale}")
+        bg = " · фоновый" if f.priority == PRIO_BG else ""
+        print(f"\n{i}. {f.title}{bg}{mark} — посл. {dm(f.last_touch())}, {ago(f.last_touch())}{stale}")
         prev, here = _prev_here(f)
         if prev:
             print(f"   Остановились: {dm(prev.day)} «{prev.label}»")
@@ -1272,7 +1295,7 @@ def cmd_status(a):
         if not prev and not here:
             print("   точек пока нет")
     if paused:
-        print(f"\nНА ПАУЗЕ ({len(paused)}): " + ", ".join(f"{f.title} (P{f.priority})" for f in paused))
+        print(f"\nНА ПАУЗЕ ({len(paused)}): " + ", ".join(f.title + (" (фоновый)" if f.priority == PRIO_BG else "") for f in paused))
     if closed:
         if a.all:
             print(f"\nЗАКРЫТЫЕ ({len(closed)}): " + ", ".join(f"{f.title} ({f.slug})" for f in closed))
@@ -1304,11 +1327,11 @@ CARD_KEYS = {"комментарии": "comments", "комментарий": "co
              "идеи": "comments", "ideas": "comments", "idei": "comments"}   # идеи — в комментариях
 NAV_CMDS = {"prev": "prev", "next": "next", "point": "point"}
 CURRENT_MARK = "⚡"      # открытая точка — первый символ шапки карточки (у завершённых POINT_MARK)
-PRIO_MARKS = {1: "🔴", 2: "🟡", 3: "🟢"}   # приоритет: в каталоге — перед заголовком, в потоке — после названия
 
 
-def prio_mark(p: int) -> str:
-    return PRIO_MARKS.get(p, PRIO_MARKS[3])
+def bg_tail(f: "Flow") -> str:
+    """Пометка справа от названия внутри потока: у фонового — «· фоновый», у основного — ничего."""
+    return " · фоновый" if f.priority == PRIO_BG else ""
 POINT_MARK = "📍"
 COMMENTS_MARK = "💬"     # первый символ шапки на экране комментариев
 
@@ -1389,9 +1412,9 @@ def _print_items(caption: str, path: Path, es: list[str], items: list, shown: li
 
 
 def _point_head(f: Flow, p: Point | None, mark: str = "") -> str:
-    """Шапка карточки и её экранов: маркер, поток, приоритет; «Точка i из n · дата»; заголовок."""
+    """Шапка карточки и её экранов: маркер, поток (фоновый — с пометкой); «Точка i из n · дата»; заголовок."""
     mark = mark or (CURRENT_MARK if p and p.is_open else POINT_MARK)
-    head = f"{mark} {f.title} · {prio_mark(f.priority)}" + (" · пауза" if f.status == "paused" else "")
+    head = f"{mark} {f.title}{bg_tail(f)}" + (" · пауза" if f.status == "paused" else "")
     if not p:
         return head
     pts = f.points()
@@ -1485,8 +1508,8 @@ def render_view(screen: str = "", if_asked: bool = False):
     if screen == "calendar":
         return print_calendar()
     cur = get_current()
-    if not cur or screen in ("list", "list3"):
-        return print_catalog(screen == "list3")
+    if not cur or screen in ("list", BG_CMD):
+        return print_catalog(screen == BG_CMD)
     f = resolve_flow(cur)
     p = _pointer_point(f, get_pointer() or {})
     if screen == "comments":
@@ -1496,12 +1519,12 @@ def render_view(screen: str = "", if_asked: bool = False):
 
 
 def go(target: list[str]):
-    """Переставить указатель (без вывода): list | list3 | open N | prev | next | point | back
+    """Переставить указатель (без вывода): list | background | open N | prev | next | point | back
     | card комментарии | calendar (календарь указатель не трогает — разовый экран)."""
     what = norm(target[0]) if target else "list"
     rest = target[1:]
-    if what in ("list", "list3"):
-        return clear_current(what)
+    if what in ("list", BG_CMD, "list3", "фон", "фоновые"):   # list3 — старое имя /background
+        return clear_current("list" if what == "list" else BG_CMD)
     if what in ("calendar", "календарь"):
         st = load_state()
         st["screen"] = "calendar"
@@ -1542,7 +1565,7 @@ def go(target: list[str]):
         q = pts[max(0, min(k, len(pts) - 1))]
         stay = (load_state().get("last_card") or {}).get("kind") == "comments"   # листаем комментарии
         return set_pointer(f.slug, "" if q.is_open else q.stem, screen="comments" if stay else "")
-    die(f"Не понимаю «{what}». Можно: list, list3, open N, prev, next, point, back, card комментарии, calendar")
+    die(f"Не понимаю «{what}». Можно: list, background, open N, prev, next, point, back, card комментарии, calendar")
 
 
 def cmd_go(a):
@@ -1658,31 +1681,24 @@ def cmd_unhide(a):
 
 
 def cmd_list(a):
-    """Кнопки /list и /list3: указатель — на каталог, показать каталог потоков без задач."""
+    """Кнопки /list и /background: указатель — на каталог, показать каталог потоков без задач."""
     low = getattr(a, "low", False)
     clear_current()
     print_catalog(low)
 
 
 def print_catalog(low: bool = False):
-    """/list — приоритеты 1 и 2 (сначала 1), /list3 — только 3. Внутри приоритета — по моменту
-    открытия текущей точки: открыл новую — поток вниз; записи порядок не меняют.
+    """/list — основные потоки одним списком, /background (low) — фоновые. Без подзаголовков и кружков.
+    Порядок — по моменту открытия текущей точки: открыл новую — поток вниз; записи порядок не меняют.
     Номера запоминаются (state.last_list)."""
     live = [f for f in all_flows() if f.status != "closed"]
-    shown = sorted([f for f in live if (f.priority >= 3) == low],
-                   key=lambda f: (f.priority, f.status != "open", f.point_started(), f.title))
+    shown = sorted([f for f in live if (f.priority == PRIO_BG) == low],
+                   key=lambda f: (f.status != "open", f.point_started(), f.title))
     st = load_state()                         # выделяем поток указателя (после /list — где он стоял)
     here = get_current() or (st.get("last_point") or {}).get("flow")
-    print(f"{prio_mark(3)} ПОТОКИ 3-ГО ПРИОРИТЕТА" if low else "ПОТОКИ")
-    if not shown:
-        print("\nпусто")
-    prev_p = None
+    print("ФОНОВЫЕ ПОТОКИ" if low else "ПОТОКИ")
+    print("\nпусто" if not shown else "")
     for i, f in enumerate(shown, 1):
-        if not low and f.priority != prev_p:
-            print(f"\n{prio_mark(f.priority)} Приоритет {f.priority}")
-            prev_p = f.priority
-        elif low and i == 1:
-            print()
         marks = (" · пауза" if f.status == "paused" else "") + (" ⚠" if f.is_stale() else "")
         num = f"/{LIST_PREFIX}{i}" if i <= LIST_LINKS else f"{i}."
         mark = f"{HIGHLIGHT_MARK} " if f.slug == here else ""
@@ -1690,9 +1706,9 @@ def print_catalog(low: bool = False):
     st = load_state()
     st["last_list"] = [f.slug for f in shown]
     save_state(st)
-    low_n = len([f for f in live if f.priority >= 3])
-    if not low and low_n:
-        print(f"\n{prio_mark(3)} Потоки третьего приоритета ({low_n}): /list3")
+    bg_n = len([f for f in live if f.priority == PRIO_BG])
+    if not low and bg_n:
+        print(f"\nФоновые потоки ({bg_n}): /{BG_CMD}")
     elif low:
         print("\nОсновные потоки: /list")
     print("\nНажми номер — открою поток.\n\n" + FOOTER)
@@ -1718,7 +1734,7 @@ def cmd_show(a):
     f = resolve_flow(a.flow)
     set_current(f.slug)
     created = f" · с {dm(f.created)}" if f.created else ""
-    print(f"📍 {f.title} ({f.slug}) · {prio_mark(f.priority)} · {STATUS_RU[f.status]}{created}")
+    print(f"📍 {f.title} ({f.slug}) · {PRIO_LABEL[f.priority]} · {STATUS_RU[f.status]}{created}")
     if f.tags:
         print("Теги: " + ", ".join(f.tags))
     if f.aliases:
@@ -1820,8 +1836,12 @@ def cmd_new_flow(a):
     while (FLOWS_DIR / slug).exists():
         slug = f"{base}-{n}"
         n += 1
-    if not 1 <= a.priority <= 3:
-        die("Приоритет от 1 (самый важный) до 3.")
+    try:
+        prio = prio_value(a.priority)
+    except ValueError:
+        die("Приоритет: 1 — основной, 2 — фоновый.")
+    if not all_flows() and not (BRAIN / PRIO_MARKER).exists():
+        (BRAIN / PRIO_MARKER).write_text(PRIO_MARKER_TEXT, "utf-8")   # пустое хранилище — сразу новый вид
     with Mutation(f"Новый поток: {title}"):
         d = FLOWS_DIR / slug
         d.mkdir(parents=True)
@@ -1830,7 +1850,7 @@ def cmd_new_flow(a):
         note.set("title", title)
         note.set("aliases", [x.strip() for x in (a.aliases or "").split(",") if x.strip()])
         note.set("status", "open")
-        note.set("priority", int(a.priority))
+        note.set("priority", prio)
         note.set("created", today().isoformat())
         note.set("tags", [x.strip().lstrip("#") for x in (a.tags or "").split(",") if x.strip()])
         note.body = flow_body(slug, title)
@@ -1838,7 +1858,7 @@ def cmd_new_flow(a):
         f = Flow(d)
         create_point(f, today())
         set_pointer(slug)
-    print(f"✓ Поток «{title}» создан ({slug}), P{a.priority}. Он теперь текущий.")
+    print(f"✓ Поток «{title}» создан ({slug}), {PRIO_LABEL[prio]}. Он теперь текущий.")
 
 
 def begin_point(f: Flow, title: str = "", fresh: bool = False) -> tuple[Point, Point | None]:
@@ -1971,10 +1991,12 @@ def cmd_set(a):
     changes = []
     with Mutation(f"{f.title}: настройки потока"):
         if a.priority is not None:
-            if not 1 <= a.priority <= 3:
-                die("Приоритет от 1 (самый важный) до 3.")
-            f.note.set("priority", a.priority)
-            changes.append(f"P{a.priority}")
+            try:
+                prio = prio_value(a.priority)
+            except ValueError:
+                die("Приоритет: 1 — основной, 2 — фоновый.")
+            f.note.set("priority", prio)
+            changes.append(PRIO_LABEL[prio])
         if a.status:
             st = STATUS_ALIASES.get(norm(a.status))
             if not st:
@@ -2073,7 +2095,39 @@ def cmd_migrate(a):
     if todo:
         _migrate_points(todo, report)
     _migrate_conclusions(flows, report)
+    _migrate_priorities(flows, report)
     print("✓ Миграция:\n" + "\n".join(f"– {r}" for r in report) if report else "✓ Миграция не нужна.")
+
+
+PRIO_MARKER_TEXT = ("Приоритеты потоков — в новом виде: 1 — основные, 2 — фоновые.\n"
+                    "Файл ставит flows.py; без него migrate считает приоритеты старыми (1, 2, 3).\n")
+
+
+def _migrate_priorities(flows: list[Flow], report: list[str]):
+    """Три приоритета → два (2026.11.12.2): 1 и 2 → 1 (основные), 3 → 2 (фоновые). Один раз — метка в хранилище."""
+    marker = BRAIN / PRIO_MARKER
+    if marker.exists():
+        return
+    if not flows:                             # пустое хранилище — сразу новый вид
+        marker.write_text(PRIO_MARKER_TEXT, "utf-8")
+        return
+    with Mutation("Миграция: два приоритета — основные и фоновые"):
+        moved = {PRIO_MAIN: 0, PRIO_BG: 0}
+        for f in flows:
+            try:
+                old = int(str(f.note.get("priority", 2)).strip())
+            except ValueError:
+                old = 2
+            new = PRIO_BG if old >= 3 else PRIO_MAIN
+            moved[new] += 1
+            if str(f.note.get("priority")) != str(new):
+                f.note.set("priority", new)
+                f.note.save()
+        tpl = TEMPLATES_DIR / "Поток.md"
+        if tpl.exists():
+            tpl.write_text(re.sub(r"^priority: 2$", "priority: 1", tpl.read_text("utf-8"), count=1, flags=re.M), "utf-8")
+        marker.write_text(PRIO_MARKER_TEXT, "utf-8")
+    report.append(f"приоритеты: основных {moved[PRIO_MAIN]}, фоновых {moved[PRIO_BG]} (было 1/2/3)")
 
 
 def _migrate_conclusions(flows: list[Flow], report: list[str]):
@@ -2800,7 +2854,7 @@ type: flow
 title: {{title}}
 aliases: []
 status: open
-priority: 2
+priority: 1
 created: {{date:YYYY-MM-DD}}
 tags: []
 ---
@@ -2830,7 +2884,7 @@ def cmd_init(a):
         (TEMPLATES_DIR / "Поток.md", TPL_FLOW),
         (TAGS_FILE, TAGS_STARTER),
         (INBOX_NOTES, "# Входящие заметки\n\n"),
-    ):
+    ) + (((BRAIN / PRIO_MARKER, PRIO_MARKER_TEXT),) if not any(FLOWS_DIR.glob(f"*/{FLOW_FILE}")) else ()):
         if not path.exists():
             path.write_text(content, "utf-8")
             created.append(str(path.relative_to(BRAIN)))
@@ -2856,14 +2910,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("status", cmd_status, "актуальные потоки: на чём остановились и что предстоит")
     p.add_argument("--all", action="store_true", help="показать и закрытые")
 
-    p = add("list", cmd_list, "каталог потоков без задач + сброс указателя (кнопки /list, /list3)")
-    p.add_argument("--low", action="store_true", help="только 3-й приоритет (кнопка /list3)")
+    p = add("list", cmd_list, "каталог потоков без задач + сброс указателя (кнопки /list, /background)")
+    p.add_argument("--low", "--background", dest="low", action="store_true", help="фоновые потоки (кнопка /background)")
 
     p = add("open", cmd_open, "карточка потока: где остановились, задачи (кнопки /1, /2… из каталога)")
     p.add_argument("flow", help="номер из последнего каталога или название")
 
     p = add("go", cmd_go, "переставить указатель без вывода (для кнопок через /new)")
-    p.add_argument("target", nargs="*", help="list | list3 | open N | prev | next | point | back | card комментарии | calendar")
+    p.add_argument("target", nargs="*", help="list | background | open N | prev | next | point | back | card комментарии | calendar")
 
     p = add("view", cmd_view, "экран после /new: точка под указателем, нет указателя — список")
     p.add_argument("--if-asked", action="store_true", help="только после кнопки (go), обычный /new — пусто")
@@ -2908,7 +2962,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("new-flow", cmd_new_flow, "создать поток")
     p.add_argument("title")
-    p.add_argument("--priority", type=int, default=2, choices=[1, 2, 3])
+    p.add_argument("--priority", default="1", help="1 — основной (по умолчанию), 2 — фоновый (старое 3 = 2)")
     p.add_argument("--tags", help="через запятую")
     p.add_argument("--aliases", help="другие названия через запятую")
     p.add_argument("--slug")
@@ -2976,7 +3030,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("set", cmd_set, "приоритет/статус/название потока")
     p.add_argument("flow")
-    p.add_argument("--priority", type=int)
+    p.add_argument("--priority", help="1 — основной, 2 — фоновый")
     p.add_argument("--status")
     p.add_argument("--title")
     p.add_argument("--add-alias")

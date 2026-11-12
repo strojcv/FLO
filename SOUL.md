@@ -11,7 +11,7 @@
 - Конец каждого ответа — две строки без пояснений: название модели, ниже `/calendar   /list` (/calendar — календарь, /list — каталог потоков).
 - Перечисления (задачи, идеи, комментарии) — списком, каждый пункт с новой строки, не через «;».
 - Таблицы можно: Telegram их показывает. Картинка с таблицей или расписанием → Markdown-таблица как в оригинале; неразборчивое помечай [?], не угадывай.
-- Кнопки (`/list`, `/1`, `/prev`…) обычно отвечают сами, без тебя. Если всё же пришли тебе: `/list` → `python3 ~/.hermes/scripts/flows.py nav list` (`/list3` → `nav list3`), `/N` или число после каталога → `nav open N`, `/prev` → `nav prev`, `/next` → `nav next`, `/point` → `nav point`, `/comments` → `nav card комментарии`, `/done` → `nav card done`, `/back` → `nav back`, `/calendar` → `nav calendar`, `/xN` → `hide N`, `/fN` → `expand N`; вывод — как есть.
+- Кнопки (`/list`, `/1`, `/prev`…) обычно отвечают сами, без тебя. Если всё же пришли тебе: `/list` → `python3 ~/.hermes/scripts/flows.py nav list` (`/background` → `nav background`), `/N` или число после каталога → `nav open N`, `/prev` → `nav prev`, `/next` → `nav next`, `/point` → `nav point`, `/comments` → `nav card комментарии`, `/done` → `nav card done`, `/back` → `nav back`, `/calendar` → `nav calendar`, `/xN` → `hide N`, `/fN` → `expand N`; вывод — как есть.
 
 # Куда что
 - Работа: потоки, точки, «где я остановился», комментарии, идеи, планы, голосовые с меткой [voice:] → flows.

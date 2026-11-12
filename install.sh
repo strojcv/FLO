@@ -102,7 +102,7 @@ if [ ! -f "$CFG_DIR/config.json" ]; then
   "brain": "$BRAIN",
   "timezone": "$TZ_NAME",
   "git_autosync": false,
-  "stale_days": {"1": 3, "2": 7, "3": 14},
+  "stale_days": {"1": 7, "2": 14},
   "stt_backend": "venv",
   "stt_venv_python": "$VENV_PY",
   "stt_engines": ["openai-whisper:small", "faster-whisper:base"],
