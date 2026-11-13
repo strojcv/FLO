@@ -346,6 +346,13 @@ PY
 check "gigaam режет 65 с на куски" "Кусок" bash -c "PATH=$T/giga/bin:\$PATH FLOWS_NOW=2026-11-01T11:00 python3 $H/flows_stt.py $T/rec.ogg $T/out2.txt && cat $T/out2.txt"
 check "модель gigaam в конце" "— GigaAM gigaam-v3-e2e-ctc · " tail -1 "$T/out2.txt"
 check "расшифровано gigaam" "stt: gigaam:gigaam-v3-e2e-ctc" bash -c "cat $T/brain/_inbox/voice/2026-11-01-110000*.md"
+printf '#!/bin/sh\nexec sleep 30\n' > "$T/giga/bin/slow"; chmod +x "$T/giga/bin/slow"
+python3 - "$T/config.json" "$T/slow.json" "$T/giga/bin/slow" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1])); c["stt_engine_python"] = {"gigaam": sys.argv[3]}; c["stt_timeout_seconds"] = 12
+json.dump(c, open(sys.argv[2], "w"))
+PY
+check "зависший движок: общий предел времени, запасной не запускается" "не уложился" bash -c "FLOWS_CONFIG=$T/slow.json python3 $H/flows_stt.py $T/rec.ogg $T/out3.txt; true"
 
 echo "▸ удаление потока"
 export FLOWS_NOW=2026-11-01T11:30

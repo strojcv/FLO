@@ -12,9 +12,8 @@ flows.py — «потоковый органайзер» для Hermes Agent.
     _inbox/заметки.md            мысли без потока
     _audio/ГГГГ/ММ/<id>.*        исходное аудио (в git не попадает)
     _templates/                  шаблоны для ручного создания точек в Obsidian
-    flows/<slug>/_поток.md       шапка потока + оглавление точек (оглавление собирается само)
-    flows/<slug>/ГГГГ-ММ-ДД.md   точки потока (вторая точка за день: ГГГГ-ММ-ДД-2.md)
-    flows/<slug>/_следующая.md   следующая точка: копит задачи и идеи до начала работы
+    flows/<slug>/_поток.md       шапка потока, комментарии (новые сверху), оглавление точек (собирается само)
+    flows/<slug>/ГГГГ-ММ-ДД.md   точки потока: задачи и контекст, новые сверху (вторая за день: …-2.md)
     календарь/<дата>-<имя>.md    события и напоминания (с потоком или без)
     календарь/КАЛЕНДАРЬ.md       всё по времени (генерируется)
     flows/<slug>/sources/<id>.md привязанные к потоку расшифровки
@@ -66,6 +65,7 @@ DEFAULT_CONFIG = {
     "stt_groq_model": "whisper-large-v3",
     "stt_openai_model": "whisper-1",
     "stt_min_save_seconds": 60,                        # короче — не сохраняем как исходник (это команды)
+    "stt_timeout_seconds": 1800,                       # предел расшифровки на все движки вместе
 }
 
 
@@ -668,7 +668,7 @@ def entry_parts(entry: str) -> tuple[date | None, str]:
 
 class Point:
     """Точка — один заход в работу: ГГГГ-ММ-ДД.md (открыта или закрыта).
-    Следующая точка — NEXT_FILE: копит задачи и идеи, пока работа не началась."""
+    У потока одна открытая точка; NEXT_FILE («следующая точка») — только старые данные для migrate."""
 
     def __init__(self, flow: "Flow", path: Path):
         self.flow = flow
@@ -3125,7 +3125,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("list", cmd_list, "каталог потоков без задач + сброс указателя (кнопки /list, /background)")
     p.add_argument("--low", "--background", dest="low", action="store_true", help="фоновые потоки (кнопка /background)")
 
-    p = add("open", cmd_open, "карточка потока: где остановились, задачи (кнопки /1, /2… из каталога)")
+    p = add("open", cmd_open, "карточка открытой точки потока: задачи (кнопки /1, /2… из каталога)")
     p.add_argument("flow", help="номер из последнего каталога или название")
 
     p = add("go", cmd_go, "переставить указатель без вывода (для кнопок через /new)")
@@ -3137,10 +3137,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("nav", cmd_nav, "go + view одной командой")
     p.add_argument("target", nargs="*")
 
-    add("migrate", cmd_migrate, "перейти со «следующей точки» на одну открытую (делает install.sh)")
+    add("migrate", cmd_migrate, "перевести старые данные на текущий формат (делает install.sh, можно повторять)")
 
     p = add("card", cmd_card, "комментарии потока под указателем (кнопка /comments)")
-    p.add_argument("kind", help="комментарии")
+    p.add_argument("kind", help="комментарии | done")
     p.add_argument("flow", nargs="?", help="по умолчанию — поток последней карточки")
 
     p = add("hide", cmd_hide, "скрыть пункт K последней карточки (кнопки /x1, /x2…)")
@@ -3149,7 +3149,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("expand", cmd_expand, "раскрыть/свернуть запись K последнего экрана (кнопки /f1, /f2…)")
     p.add_argument("n", type=int)
 
-    p = add("unhide", cmd_unhide, "вернуть скрытую задачу/идею по куску текста")
+    p = add("unhide", cmd_unhide, "вернуть выполненную (скрытую) задачу по куску текста")
     p.add_argument("flow")
     p.add_argument("find")
     p.add_argument("--point")
@@ -3160,7 +3160,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("point", cmd_point, "показать точку (по умолчанию текущую)")
     p.add_argument("flow", nargs="?")
-    p.add_argument("point", nargs="?", help="дата 2026-10-23, номер из show, last или next")
+    p.add_argument("point", nargs="?", help="дата 2026-10-23, номер из show или last; по умолчанию — открытая")
     p.add_argument("--section", help="контекст | задачи | комментарии")
     p.add_argument("--raw", action="store_true", help="не убирать ссылки")
 
@@ -3217,13 +3217,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--point", help="дата или номер прошлой точки; по умолчанию — открытая")
     p.add_argument("--src", help="id голосовой, к которой относится запись")
     p.add_argument("--summary", help="заодно обновить выжимку точки (одна фраза)")
-    p.add_argument("--short", help="короткий заголовок записи (2–6 слов) — его видно в списках")
+    p.add_argument("--short", help="тезис в 1–2 строки (до ~100 знаков): суть сразу; его видно в списках, весь текст — по /fK")
 
-    p = add("brief", cmd_brief, "дать короткий заголовок уже записанной задаче/идее")
+    p = add("brief", cmd_brief, "дать тезис-заголовок уже записанной задаче, контексту или комментарию")
     p.add_argument("flow")
     p.add_argument("find", help="кусок текста записи")
-    p.add_argument("title", help="заголовок, 2–6 слов")
-    p.add_argument("--point", help="дата, номер или next; по умолчанию — открытая, иначе следующая")
+    p.add_argument("title", help="тезис в 1–2 строки")
+    p.add_argument("--point", help="дата или номер прошлой точки; по умолчанию — открытая")
 
     p = add("title", cmd_title, "заголовок точки")
     p.add_argument("flow")

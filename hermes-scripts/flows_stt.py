@@ -91,9 +91,12 @@ def api_transcribe(url: str, key: str, fields: dict, path: Path) -> dict:
 
 
 def venv_transcribe(path: Path, lang: str | None):
-    """Локальный Whisper из уже существующего venv, по очереди движки из stt_engines."""
+    """Локальный Whisper из уже существующего venv, по очереди движки из stt_engines.
+    Общий предел времени — stt_timeout_seconds (по умолчанию 1800 с) на все движки вместе: упавший
+    первый движок не должен оставить запасному Whisper час на двух ядрах."""
     cfg = flows.CFG
     errors = []
+    deadline = time.monotonic() + float(cfg.get("stt_timeout_seconds", 1800))
     for spec in cfg.get("stt_engines") or ["openai-whisper:small", "faster-whisper:base"]:
         engine, _, model = str(spec).partition(":")
         # у движка может быть свой venv (GigaAM — отдельно от Whisper): stt_engine_python
@@ -102,8 +105,16 @@ def venv_transcribe(path: Path, lang: str | None):
         if not py or not os.path.exists(py):
             errors.append(f"{spec}: не найден Python {py!r} — поправь stt_venv_python / stt_engine_python в {flows.CONFIG_PATH}")
             continue
-        r = subprocess.run([py, str(WORKER), str(path), engine, model or "small", lang or ""],
-                           capture_output=True, text=True)
+        left = deadline - time.monotonic()
+        if left < 10:
+            errors.append(f"{spec}: не запускал — вышло время (stt_timeout_seconds)")
+            break
+        try:
+            r = subprocess.run([py, str(WORKER), str(path), engine, model or "small", lang or ""],
+                               capture_output=True, text=True, timeout=left)
+        except subprocess.TimeoutExpired:
+            errors.append(f"{spec}: не уложился в {int(left)} с (stt_timeout_seconds)")
+            break
         if r.returncode == 0:
             for line in reversed(r.stdout.strip().splitlines()):
                 if line.startswith("{"):
