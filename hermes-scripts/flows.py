@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time as clock
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
@@ -656,10 +657,16 @@ class Point:
     def __init__(self, flow: "Flow", path: Path):
         self.flow = flow
         self.path = path
-        self.note = Note(path)
+        self._note: Note | None = None        # файл читается, только когда нужен (потоков и точек много)
         m = POINT_RE.match(path.name)
         self.day = date.fromisoformat(m.group(1))
         self.suffix = int(m.group(2) or 1)
+
+    @property
+    def note(self) -> Note:
+        if self._note is None:
+            self._note = Note(self.path)
+        return self._note
 
     @property
     def stem(self) -> str:
@@ -799,8 +806,8 @@ class Flow:
         return self.open_point() or create_point(self, today())
 
     def open_point(self) -> Point | None:
-        op = [p for p in self.points() if p.is_open]
-        return op[-1] if op else None
+        """Открытая точка — почти всегда последняя: ищем с конца, не читая все файлы."""
+        return next((p for p in reversed(self.points()) if p.is_open), None)
 
     def current(self) -> Point | None:
         """Точка, к которой относятся «что сделано» и комментарии: открытая, иначе последняя."""
@@ -910,7 +917,7 @@ def resolve_flow(q: str | None) -> Flow:
             hit = [f for f in flows if f.slug == last[i - 1]]
             if hit:
                 return hit[0]
-        die(f"Номера {q} нет в последнем списке потоков — нажми /list.\n\n" + FOOTER)
+        die(f"Номера {q} нет в последнем списке потоков — нажми /list.\n\n" + footer())
     nq = norm(q)
     exact = [f for f in flows if nq in {norm(n) for n in f.names()}]
     if len(exact) == 1:
@@ -1013,7 +1020,8 @@ def remember_last_add(path: Path, heading: str, entry: str):
 
 class GitSync:
     def __init__(self, prefer: str | None = None):
-        self.enabled = bool(CFG.get("git_autosync")) and (BRAIN / ".git").exists()
+        self.local = (BRAIN / ".git").exists()     # коммит в историю хранилища — всегда, если есть git
+        self.enabled = bool(CFG.get("git_autosync")) and self.local   # pull/push с GitHub — по настройке
         self._remote = None
         # при rebase «theirs» — это наши локальные коммиты, «ours» — пришедшие с GitHub
         self.strategy = {"server": ["-X", "theirs"], "pc": ["-X", "ours"]}.get(prefer or "", [])
@@ -1042,7 +1050,8 @@ class GitSync:
                 warn("git pull не прошёл (работаю с локальной копией): " + short(r.stderr, 200))
 
     def push(self, msg: str):
-        if not self.enabled:
+        """Коммит изменений в историю хранилища (всегда); с git_autosync — ещё и push на GitHub."""
+        if not self.local:
             return
         self.git("add", "-A")
         if self.git("diff", "--cached", "--quiet").returncode == 0:
@@ -1051,7 +1060,7 @@ class GitSync:
         if r.returncode != 0:
             warn("git commit не прошёл: " + short(r.stderr or r.stdout, 200))
             return
-        if self.has_remote():
+        if self.enabled and self.has_remote():
             r = self.git("push", "-q")
             if r.returncode != 0:
                 self.pull()
@@ -1062,7 +1071,7 @@ class GitSync:
 
 
 class Mutation:
-    """with Mutation('сообщение'): pull до изменений, оглавление + commit/push после."""
+    """with Mutation('сообщение'): pull до изменений; после — оглавления того, что изменилось, и коммит."""
 
     def __init__(self, msg: str):
         self.msg = msg
@@ -1070,11 +1079,13 @@ class Mutation:
 
     def __enter__(self):
         self.sync.pull()
+        # mtime файла ядро ставит по грубым часам — бывает на миллисекунды раньше time.time(): запас 2 с
+        self.started = clock.time() - 2
         return self
 
     def __exit__(self, exc_type, exc, tb):
         if exc_type is None:
-            write_index()
+            write_index(since=self.started)
             self.sync.push(self.msg)
         return False
 
@@ -1192,12 +1203,25 @@ def write_flow_toc(f: Flow):
         note.save()
 
 
-def write_index():
+def _changed_since(d: Path, since: float) -> bool:
+    """Что-то в папке менялось с момента since: файл создан/удалён (mtime папки) или переписан.
+    Только stat, без чтения файлов."""
+    try:
+        return d.stat().st_mtime >= since or any(p.stat().st_mtime >= since for p in d.glob("*.md"))
+    except FileNotFoundError:
+        return False
+
+
+def write_index(since: float | None = None):
+    """ПОТОКИ.md, оглавления потоков и КАЛЕНДАРЬ.md. since (после изменения) — оглавления только тех
+    потоков и календарь, только если в их папках что-то поменялось; без since — всё заново."""
     if not BRAIN.exists():
         return
     for f in all_flows():
-        write_flow_toc(f)
-    write_calendar_index()
+        if since is None or _changed_since(f.dir, since):
+            write_flow_toc(f)
+    if since is None or _changed_since(CAL_DIR, since):
+        write_calendar_index()
     content = build_index()
     old = INDEX_FILE.read_text("utf-8") if INDEX_FILE.exists() else ""
     if old != content:
@@ -1239,8 +1263,8 @@ def _prev_here(f: Flow) -> tuple[Point | None, Point | None]:
     """Прошлая (последняя завершённая) точка и текущая открытая."""
     pts = f.points()
     op = f.open_point()
-    done = [p for p in pts if not p.is_open and (op is None or pts.index(p) < pts.index(op))]
-    return (done[-1] if done else None), op
+    before = pts[:pts.index(op)] if op else pts      # с конца: читаем только последние файлы
+    return next((p for p in reversed(before) if not p.is_open), None), op
 
 
 def _here_head(f: Flow, here: Point) -> str:
@@ -1302,6 +1326,16 @@ LIST_LINKS = 30                                       # столько кома�
 
 
 FOOTER = "/calendar   /list"   # нижний ряд кнопок каждого экрана (/point работает, но в ряд не выводится)
+TODAY_MARK = "⚡"                # перед /calendar, если на сегодня есть события
+
+
+def footer() -> str:
+    """Нижний ряд; есть активные события на сегодня — «⚡ /calendar   /list». Читает только файлы
+    календаря с сегодняшней датой в имени (имя события начинается с его даты)."""
+    d = today()
+    hot = any(e.active and e.when[0] and e.when[0].date() == d
+              for e in (Event(p) for p in CAL_DIR.glob(f"{d:%Y-%m-%d}-*.md")))
+    return f"{TODAY_MARK} {FOOTER}" if hot else FOOTER
 HIDE_PREFIX = "x"        # кнопки скрытия задач в карточке: /x1, /x2 …
 EXPAND_PREFIX = "f"      # раскрыть/свернуть одну запись (задачу, комментарий): /f1, /f2 …
 BACK_CMD = "back"        # из комментариев — назад в карточку точки
@@ -1449,7 +1483,7 @@ def print_point_card(f: Flow, p: Point | None, done_open: bool = False):
     if not p:
         print("точек пока нет")
         _save_card(f, "point", items, p)
-        print("\n" + FOOTER)
+        print("\n" + footer())
         return
     print(f"/{CARD_CMDS['comments']} ({len(f.comments())})")
     open_ = _expanded(f, p, kind)
@@ -1470,7 +1504,7 @@ def print_point_card(f: Flow, p: Point | None, done_open: bool = False):
             print("\nзадач не было")
     _save_card(f, kind, items, p, shown)
     _print_nav(f, p)
-    print("\n" + FOOTER)
+    print("\n" + footer())
 
 
 def print_comments(f: Flow, p: Point | None = None):
@@ -1490,7 +1524,7 @@ def print_comments(f: Flow, p: Point | None = None):
     else:
         print("\nкомментариев пока нет")
     _save_card(f, "comments", items, p, shown)
-    print("\n" + FOOTER)
+    print("\n" + footer())
 
 
 def _pointer_point(f: Flow, ptr: dict) -> Point | None:
@@ -1554,11 +1588,11 @@ def go(target: list[str]):
             return set_pointer(cur, "" if again else ptr.get("point", ""))
         lp = load_state().get("last_point") or {}
         if not lp.get("flow"):
-            die("Ещё не открывал ни одной точки — нажми /list и номер потока.\n\n" + FOOTER)
+            die("Ещё не открывал ни одной точки — нажми /list и номер потока.\n\n" + footer())
         return set_pointer(resolve_flow(lp["flow"]).slug, lp.get("point", ""))
     cur = get_current()
     if not cur:
-        die("Сначала открой поток: /list и номер.\n\n" + FOOTER)
+        die("Сначала открой поток: /list и номер.\n\n" + footer())
     f = resolve_flow(cur)
     ptr = get_pointer() or {}
     p = _pointer_point(f, ptr)
@@ -1606,7 +1640,7 @@ def _set_hidden(path: Path, entry: str, hide: bool) -> str:
     """Поставить/снять пометку ✓ у записи в файле точки; вернуть новую запись."""
     note = Note(path)
     if entry not in note.body:
-        die("Карточка устарела — нажми номер потока ещё раз.\n\n" + FOOTER)
+        die("Карточка устарела — нажми номер потока ещё раз.\n\n" + footer())
     m = ENTRY_DATE_RE.match(entry)
     head, rest = (entry[:m.end()], entry[m.end():]) if m else (entry[:2], entry[2:])
     rest = rest.lstrip()
@@ -1625,14 +1659,14 @@ def cmd_hide(a):
         return _hide_event(card.get("items") or [], a.n)
     items = card.get("items") or []
     if not 1 <= a.n <= len(items):
-        die(f"В последней карточке нет пункта {a.n} — нажми номер потока ещё раз.\n\n" + FOOTER)
+        die(f"В последней карточке нет пункта {a.n} — нажми номер потока ещё раз.\n\n" + footer())
     f = resolve_flow(card["flow"])
     path, entry = items[a.n - 1]
     if card.get("kind") == "comments":           # на экране комментариев /xK удаляет комментарий
         with Mutation(f"{f.title}: удалён комментарий"):
             note = Note(Path(path))
             if not note.remove_entry(entry):
-                die("Экран устарел — нажми /comments ещё раз.\n\n" + FOOTER)
+                die("Экран устарел — нажми /comments ещё раз.\n\n" + footer())
             note.save()
         print(f"🗑 Удалил комментарий: {brief(plain(entry_parts(entry)[1]), 60)}\n")
         return render_view("comments")
@@ -1650,10 +1684,10 @@ def cmd_expand(a):
     card = st.get("last_card") or {}
     kind = card.get("kind")
     if kind not in ("point", "done", "comments"):
-        die("Раскрывать здесь нечего — открой точку: /list и номер потока.\n\n" + FOOTER)
+        die("Раскрывать здесь нечего — открой точку: /list и номер потока.\n\n" + footer())
     shown = card.get("shown") or []
     if not 1 <= a.n <= len(shown):
-        die(f"На последнем экране нет записи {a.n} — открой его ещё раз.\n\n" + FOOTER)
+        die(f"На последнем экране нет записи {a.n} — открой его ещё раз.\n\n" + footer())
     f = resolve_flow(card["flow"])
     p = _pointer_point(f, {"point": card.get("point", "")})
     sid = _screen_id(f, p, kind)
@@ -1671,7 +1705,7 @@ def cmd_expand(a):
 def _hide_event(stems: list[str], n: int):
     """/xK на экране календаря: закрыть K-е событие (status: done, как прошедшее)."""
     if not 1 <= n <= len(stems):
-        die(f"В календаре нет пункта {n} — нажми /calendar ещё раз.\n\n" + FOOTER)
+        die(f"В календаре нет пункта {n} — нажми /calendar ещё раз.\n\n" + footer())
     hit = [e for e in all_events() if e.stem == stems[n - 1]]
     if hit:
         with Mutation(f"Календарь: убрано «{hit[0].title}»"):
@@ -1728,7 +1762,7 @@ def print_catalog(low: bool = False):
         print(f"\nФоновые потоки ({bg_n}): /{BG_CMD}")
     elif low:
         print("\nОсновные потоки: /list")
-    print("\nНажми номер — открою поток.\n\n" + FOOTER)
+    print("\nНажми номер — открою поток.\n\n" + footer())
 
 
 def _print_state(f: Flow):
@@ -2637,7 +2671,7 @@ def print_calendar(days: int | None = None):
     st = load_state()
     st["last_card"] = {"kind": "calendar", "items": shown}
     save_state(st)
-    print("\n" + FOOTER)
+    print("\n" + footer())
 
 
 def cmd_calendar(a):
@@ -2731,7 +2765,7 @@ def cmd_move(a):
 
 def cmd_index(a):
     with Mutation("Оглавление потоков"):
-        pass
+        write_index()
     print(f"✓ {INDEX_FILE.relative_to(BRAIN.parent)} обновлён.")
 
 

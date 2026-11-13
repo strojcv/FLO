@@ -579,6 +579,28 @@ check "всё на месте — ничего не делает" "✓ Наст�
 empty "…hermes не вызывается" cat "$T/hermes-calls"
 rm -rf "$HOME/.hermes"
 
+echo "▸ ⚡ у /calendar, история git, оглавления — только изменённого"
+export FLOWS_NOW=2026-11-20T10:00
+lacks "событий на сегодня нет — без ⚡" "⚡ /calendar" $F list
+check "событие на сегодня без времени" "В календаре" $F event "Позвонить в банк" --when "2026-11-20"
+check "…в нижнем ряду ⚡ слева от /calendar" "⚡ /calendar   /list" $F list
+check "…и на карточке точки" "⚡ /calendar   /list" $F nav open 1
+lacks "…поздно вечером оно ещё не «прошло»" "20.11 (прошло)" at 2026-11-20T23:30 $F calendar
+lacks "…завтра — уже без ⚡ в нижнем ряду" "⚡ /calendar" at 2026-11-21T09:00 $F list
+check "…убрал событие — ⚡ пропала" "убрано из календаря" $F move банк --cancel
+lacks "…в нижнем ряду её нет" "⚡ /calendar" $F list
+python3 - "$T/config.json" "$T/nosync.json" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1])); c["git_autosync"] = False; json.dump(c, open(sys.argv[2], "w"))
+PY
+check "без git_autosync — всё равно коммит в историю хранилища" "Запуск курса: +задачи" bash -c "FLOWS_CONFIG=$T/nosync.json $F add запуск задачи 'Проверить форму' >/dev/null; git -C $T/brain log --oneline -1"
+OTHER="$T/brain/flows/reklama/_поток.md"
+touch -t 202001010000 "$OTHER"
+check "запись в один поток" "Задачи +1" $F add запуск задачи "Купить домен"
+check "…оглавление другого потока не переписано" "202001010000" bash -c "date -r $OTHER +%Y%m%d%H%M 2>/dev/null || stat -c %y $OTHER"
+check "index — пересобирает всё" "обновлён" $F index
+unset FLOWS_NOW
+
 echo "▸ миграция"
 check "переводить нечего" "Миграция не нужна" $F migrate
 
