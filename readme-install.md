@@ -57,7 +57,7 @@ bash ~/flows-organizer/install.sh
 
 ---
 
-## 4а. Кнопки /list, /1…/30, /prev, /next, /comments, /ideas, /x…
+## 4а. Кнопки /list, /1…/30, /prev, /next, /comments, /back, /calendar, /x…, /f…
 
 Отдельно запускать не нужно: `install.sh` сам кладёт хук `~/.hermes/hooks/flows-nav` и заводит
 кнопки в `config.yaml` (строка «✓ Кнопки…»); после этого нужен `/restart`. В строке видно режим: «через /new, контекст чистится» —
@@ -129,7 +129,7 @@ bash ~/flows-organizer/setup-gigaam.sh
 Хук `hooks/flows-nav` — наш, перезаписывается. Файлы `~/.hermes/locales/en.yaml`, `ru.yaml` (пустой стандартный
 ответ на `/new`) — тоже наши, если там не было чужих. В `config.yaml`
 обновляет только свои кнопки в `quick_commands` (копия — `.bak-commands-…`). Данные в `~/brain`
-один раз переводит на «одну открытую точку» (`flows.py migrate`, с коммитом в git хранилища).
+не трогает (`flows.py migrate` переводит формат, только если он менялся; сейчас — нечего).
 Не трогает: `config.json`, остальной `config.yaml`, cron, память, другие навыки — тут
 Hermes может менять что угодно.
 

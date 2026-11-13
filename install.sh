@@ -10,7 +10,7 @@
 #   - создаёт ~/.config/flows/config.json и ~/brain, только если их ещё нет;
 #   - кладёт хук ~/.hermes/hooks/flows-nav (кнопки через /new и экран после /new) и
 #     ~/.hermes/locales/{en,ru}.yaml — пустой стандартный ответ на /new (вместо него — экран);
-#   - переводит данные на «одну открытую точку в потоке» (flows.py migrate, можно повторять);
+#   - переводит данные при смене формата (flows.py migrate, можно повторять; сейчас — нечего);
 #   - заводит кнопки в config.yaml (setup-commands.sh: только свои quick_commands, остальное не трогает);
 #   - включает в Hermes голосовые через органайзер, /new без «точно?» и задачу напоминаний
 #     (setup-hermes.sh: показывает, спрашивает «да», копия config.yaml; без терминала — только подсказки);
@@ -60,7 +60,6 @@ mkdir -p "$HH/scripts" "$HH/skills/productivity/flows" "$HH/skills/productivity/
 cp "$SRC"/hermes-scripts/flows.py "$SRC"/hermes-scripts/flows_stt.py \
    "$SRC"/hermes-scripts/flows_whisper_worker.py "$SRC"/hermes-scripts/facts.py \
    "$SRC"/hermes-scripts/flows_remind.py "$HH/scripts/"
-rm -f "$HH/scripts/flows_digest.py"   # утренней сводки больше нет (2026.10.27.2)
 chmod +x "$HH"/scripts/flows*.py "$HH"/scripts/facts.py
 
 # 3. Навыки flows и facts (отдельные папки, рядом с твоими)
@@ -69,10 +68,9 @@ for SK in flows facts; do
   touch "$HH/skills/productivity/$SK/.flows-organizer"
 done
 
-# 3а. Хук для кнопок через /new (наша папка целиком); плагин flows-view из 2026.10.26 больше не нужен
+# 3а. Хук для кнопок через /new (наша папка целиком)
 mkdir -p "$HH/hooks/flows-nav"
 cp -r "$SRC/hermes-hooks/flows-nav/." "$HH/hooks/flows-nav/"
-rm -rf "$HH/plugins/flows-view"
 
 # 3б. Пустой стандартный ответ на /new — вместо него экран органайзера (чужие файлы перевода не трогаем)
 mkdir -p "$HH/locales"
@@ -102,7 +100,6 @@ if [ ! -f "$CFG_DIR/config.json" ]; then
   "brain": "$BRAIN",
   "timezone": "$TZ_NAME",
   "git_autosync": false,
-  "stale_days": {"1": 7, "2": 14},
   "stt_backend": "venv",
   "stt_venv_python": "$VENV_PY",
   "stt_engines": ["openai-whisper:small", "faster-whisper:base"],

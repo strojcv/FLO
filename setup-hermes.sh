@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Включает в Hermes три настройки, без которых органайзер работает не весь:
+# Включает в Hermes настройки, без которых органайзер работает не весь или дорого:
 #   – голосовые идут в расшифровку органайзера (flows_stt.py: GigaAM, Whisper) — блок stt;
 #   – /new без «точно?» — кнопки органайзера идут через /new и иначе срабатывают со второго нажатия;
-#   – фоновая задача напоминаний раз в минуту (без нейросети) + название в push и ответ на напоминание.
+#   – фоновая задача напоминаний раз в минуту (без нейросети) + название в push и ответ на напоминание;
+#   – без автоматического самообучения: Hermes сам не разбирает разговоры и не сохраняет навыки/память
+#     (за неделю это ~5 млн токенов). Вручную — «сохрани это как навык …» или /refine.
 # Чего не хватает — показывает и спрашивает «Сделать? [Д/н]»; на «да» копирует config.yaml в
 # config.yaml.bak-flows-<дата> и меняет штатными командами hermes (комментарии в config.yaml целы).
 # Без терминала (ssh без -t, cron) не спрашивает, а печатает команды; FLO_YES=1 — делать без вопроса.
@@ -19,12 +21,17 @@ missing() {  # что из трёх не сделано — по строке н
   grep -q "flows_stt.py" "$CY" 2>/dev/null || echo stt
   grep -qE "^\s*destructive_slash_confirm:\s*false" "$CY" 2>/dev/null || echo confirm
   grep -q "flows_remind.py" "$JOBS" 2>/dev/null || echo cron
+  { grep -qE "^\s*creation_nudge_interval:\s*0\s*(#.*)?$" "$CY" && grep -qE "^\s*nudge_interval:\s*0\s*(#.*)?$" "$CY" &&
+    awk '/^[[:space:]]*background_review:[[:space:]]*$/ {b=1; next}
+         b && /^[[:space:]]*enabled:/ {print $2; exit}
+         b && /^[^[:space:]]/ {b=0}' "$CY" | grep -qx false; } 2>/dev/null || echo selflearn
 }
 explain() {
   case "$1" in
     stt)     echo "  – голосовые → расшифровка органайзера (GigaAM, запасной Whisper)";;
     confirm) echo "  – кнопки с одного нажатия: /new без «точно?» (пропадёт и у других «опасных» команд)";;
     cron)    echo "  – напоминания: фоновая задача раз в минуту, без нейросети, токены не тратит";;
+    selflearn) echo "  – без автоматического самообучения (навыки и память — только по просьбе или /refine)";;
   esac
 }
 commands() {
@@ -38,11 +45,14 @@ commands() {
     cron)    echo "hermes cron create \"every 1m\" --no-agent --script flows_remind.py --deliver telegram --name flows-reminders"
              echo "hermes config set cron.wrap_response false"
              echo "hermes config set cron.mirror_delivery true";;
+    selflearn) echo "hermes config set auxiliary.background_review.enabled false"
+             echo "hermes config set memory.nudge_interval 0"
+             echo "hermes config set skills.creation_nudge_interval 0";;
   esac
 }
 
 TODO=$(missing)
-if [ -z "$TODO" ]; then echo "✓ Настройки Hermes на месте (голосовые, /new, напоминания)"; exit 0; fi
+if [ -z "$TODO" ]; then echo "✓ Настройки Hermes на месте (голосовые, /new, напоминания, без самообучения)"; exit 0; fi
 
 echo
 echo "Hermes нужно настроить:"

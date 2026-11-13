@@ -14,6 +14,7 @@ export HOME="$T/home"; mkdir -p "$HOME"
 mkdir -p "$T/bin"
 printf '#!/bin/sh\necho "$*" >> "%s/hermes-calls"\n' "$T" > "$T/bin/hermes"; chmod +x "$T/bin/hermes"
 export PATH="$T/bin:$PATH"
+unset FLO_YES   # install.sh может запустить тесты с FLO_YES=1 — тестам нужен «чистый» вопрос
 export FLOWS_CONFIG="$T/config.json" PYTHONDONTWRITEBYTECODE=1
 cat > "$FLOWS_CONFIG" <<EOF
 {"brain": "$T/brain", "git_autosync": true, "stt_venv_python": "$T/venv/bin/python"}
@@ -51,12 +52,12 @@ export FLOWS_NOW=2026-10-20T10:00
 check "новый поток" "создан (reklama)" $F new-flow "Реклама" --priority 1 --aliases "таргет" --tags реклама
 check "…сразу с открытой точкой" "status: open" cat "$T/brain/flows/reklama/2026-10-20.md"
 check "второй поток (по умолчанию — основной)" "создан (prodayuschie-zvonki), основной" $F new-flow "Продающие звонки"
-check "приоритет только 1–3" "Приоритет: 1 — основной, 2 — фоновый." $F new-flow "Лишний" --priority 4
+check "приоритет только 1 или 2" "Приоритет: 1 — основной, 2 — фоновый." $F new-flow "Лишний" --priority 3
 lacks "…и поток не создан" "Лишний" $F status --all
 check "заголовок точки" "Кабинет настроен" $F title рекламе "Кабинет настроен"
 check "контекст" "Контекст +1" $F add реклама контекст "Создал кабинет, пиксель стоит"
 check "задача — в открытую точку" "20.10 «Кабинет настроен» · Задачи +1" $F add реклама задачи "Сделать статичные креативы"
-check "--next (старое) — тоже в открытую" "20.10 «Кабинет настроен» · Задачи +1" $F add реклама задачи "Проверить пиксель" --next
+check "вторая задача" "20.10 «Кабинет настроен» · Задачи +1" $F add реклама задачи "Проверить пиксель"
 check "новая задача — сверху списка" "Задачи:
 – Проверить пиксель
    ——  ▫️  /x1
@@ -129,7 +130,6 @@ check "/prev — карточка прошлой" "Точка 1 из 2 · 20.10.
 check "/new после комментариев — точка под указателем" "Точка 1 из 2 · 20.10.2026
 «Кабинет настроен»
 /comments (4)" $F view
-check "старое «card выводы» → комментарии" "💬 Реклама" $F card выводы
 check "нижний ряд" "
 
 /calendar   /list" $F view
@@ -159,7 +159,6 @@ check "/point после /list — последняя точка" "Точка 1 
 check "…указатель снова на ней → /new — она же" "Точка 1 из 2" $F view
 check "/background через go — один раз список фоновых" "ФОНОВЫЕ ПОТОКИ" bash -c "$F go background; $F view"
 lacks "…следующий /new — обычный список" "ФОНОВЫЕ" $F view
-check "старое /list3 из прошлых сообщений — тоже фоновые" "ФОНОВЫЕ ПОТОКИ" bash -c "$F go list3; $F view"
 check "кнопка /2 через go — точка (Реклама: новую точку открыли позже)" "⚡ Реклама" bash -c "$F list >/dev/null; $F go open 2; $F view"
 check "запись, пока смотрю историю, — в открытую" "22.10 «(без заголовка)» · Задачи +1" $F add . задачи "Заказать ролик"
 check "/next → текущая" "Точка 2 из 2 · 22.10.2026" $F nav next
@@ -203,12 +202,12 @@ check "show: текущая точка" "Текущая точка с 22.10.2026
 check "путь потока" "2. 22.10" $F show реклама
 check "заголовок точки" "Видео запущено" $F title . "Видео запущено"
 check "продолжаем: точка уже открыта" "работаем в точке с 22.10.2026" $F continue реклама
-check "завершить" "завершена" $F close-point реклама
+check "завершить" "завершена" $F new-point реклама
 check "задача — в новую точку" "29.10 «(без заголовка)» · Задачи +1" $F add реклама задачи "Смонтировать видео"
 check "продолжаем" "работаем в точке с 29.10.2026" at 2026-10-30T09:00 $F continue рекламе
 check "…сводка: задачи на сейчас" "Смонтировать видео" at 2026-10-30T09:05 $F show реклама
 check "…указатель переключён" "Реклама" at 2026-10-30T09:06 $F current
-check "фоновый поток (старое «3» — тоже фоновый)" "создан (gitara), фоновый" at 2026-10-30T09:07 $F new-flow "Гитара" --priority 3
+check "фоновый поток" "создан (gitara), фоновый" at 2026-10-30T09:07 $F new-flow "Гитара" --priority 2
 check "/list: основные одним списком, без подзаголовков" "ПОТОКИ
 
 /1 Продающие звонки — 20.10 ⚠
@@ -290,6 +289,8 @@ check "…другие дни — без ⚡" "2. вт 10:00 03.11
 check "…прошедшее сегодня — тоже с ⚡" "1. ⚡ сб 15:00 31.10 (прошло)
    Пойти к стоматологу" at 2026-10-31T16:00 $F calendar
 lacks "…вчерашнее — без ⚡" "⚡" at 2026-11-01T09:00 $F calendar
+lacks "…событие без времени сегодня — не «прошло»" "04.11 (прошло)" at 2026-11-04T09:00 $F calendar
+check "…а вчерашнее без времени — «прошло»" "04.11 (прошло)" at 2026-11-05T09:00 $F calendar
 lacks "…разовый экран: следующий /new — не календарь" "🗓" $F view
 check "/x4 убирает событие" "✓ Убрал: Купить зимнюю резину" bash -c "$F nav calendar >/dev/null; $F hide 4"
 lacks "…его нет в календаре" "резину" $F calendar
@@ -356,7 +357,7 @@ check "зависший движок: общий предел времени, з
 
 echo "▸ удаление потока"
 export FLOWS_NOW=2026-11-01T11:30
-check "поток на удаление" "создан (udalyaemyy)" $F new-flow "Удаляемый" --priority 3
+check "поток на удаление" "создан (udalyaemyy)" $F new-flow "Удаляемый" --priority 2
 check "событие по теме потока" "В календаре" $F event "Созвон с подрядчиком" --when "2026-11-04 12:00" --flow удаляемый
 check "без --force не удаляет" "Повтори с --force" $F delete-flow удаляемый
 check "поток ещё на месте" "Удаляемый" $F status --all
@@ -485,7 +486,6 @@ check "…экран перерисован, номера сдвинулись" 
    /f1  ▫️  /x1" $F card комментарии
 lacks "…из файла удалён" "Рассылки работают" cat "$T/brain/flows/zapusk-kursa/_поток.md"
 check "…в файле остался другой" "**Вебинар.**" cat "$T/brain/flows/zapusk-kursa/_поток.md"
-check "старая кнопка /ideas → комментарии" "💬 Запуск курса" $F card идеи
 check "collect идеи — просто все комментарии" "Запуск курса: комментарии потока" $F collect запуск идеи
 check "/conclusions больше нет" "Не понимаю «conclusions»" $F nav conclusions
 $F nav open запуск >/dev/null
@@ -525,19 +525,16 @@ check "nav_mode new — через /new" "через /new" env HERMES_HOME="$T/h
 check "…/prev → alias" 'target: "/new flows prev"' cat "$T/hh/config.yaml"
 check "hermes не вызывается" "0" bash -c "cat $T/hermes-calls 2>/dev/null | wc -l | tr -d ' '"
 check "…/x1 остаётся exec" 'command: "python3 '"$T"'/hh/scripts/flows.py hide 1"' cat "$T/hh/config.yaml"
-printf '  "tochka":\n    type: alias\n    target: "/new flows point"\n  "conclusions":\n    type: alias\n    target: "/new flows card выводы"\n  "insights":\n    type: alias\n    target: "/new flows insights"\n' >> "$T/hh/config.yaml"
-check "старая /tochka убирается" "Кнопки:" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
-lacks "…её нет" '"tochka"' cat "$T/hh/config.yaml"
+printf '  "mine":\n    type: exec\n    command: "echo мой"\n' >> "$T/hh/config.yaml"
+check "чужая команда в блоке — кнопки перезаписаны" "Кнопки:" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
+check "…и она сохранена" '"mine":' cat "$T/hh/config.yaml"
 check "…/point есть" 'target: "/new flows point"' cat "$T/hh/config.yaml"
 check "…/comments есть" 'target: "/new flows card комментарии"' cat "$T/hh/config.yaml"
 check "…/calendar есть" 'target: "/new flows calendar"' cat "$T/hh/config.yaml"
 check "…/back — из комментариев в карточку" 'target: "/new flows back"' cat "$T/hh/config.yaml"
-lacks "…/conclusions убрана" '"conclusions"' cat "$T/hh/config.yaml"
 check "…/done — выполненные задачи" 'target: "/new flows card done"' cat "$T/hh/config.yaml"
-lacks "…общие /full, /zip убраны" '"zip"' cat "$T/hh/config.yaml"
 check "…/f1 — раскрыть запись, exec" 'command: "python3 '"$T"'/hh/scripts/flows.py expand 1"' cat "$T/hh/config.yaml"
 check "…и /f30" '"f30":' cat "$T/hh/config.yaml"
-lacks "…/insights (встроенная Hermes) убрана" '"insights"' cat "$T/hh/config.yaml"
 check "повтор — без изменений" "уже на месте" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
 mkdir -p "$T/hh/hooks/flows-nav" "$T/hh/hermes-agent/gateway"
 touch "$T/hh/hooks/flows-nav/handler.py"
@@ -567,93 +564,23 @@ check "…блок stt" 'config set stt.providers.flows.command python3 '"$HOME"
 check "…stt.provider flows" "config set stt.provider flows" cat "$T/hermes-calls"
 check "…/new без подтверждения" "config set approvals.destructive_slash_confirm false" cat "$T/hermes-calls"
 check "…задача напоминаний" "cron create every 1m --no-agent --script flows_remind.py --deliver telegram --name flows-reminders" cat "$T/hermes-calls"
+check "…без фонового самообучения" "config set auxiliary.background_review.enabled false" cat "$T/hermes-calls"
+check "…без подталкиваний к памяти и навыкам" "config set memory.nudge_interval 0
+config set skills.creation_nudge_interval 0" cat "$T/hermes-calls"
 check "…копия на месте" "config.yaml.bak-flows-" ls "$HOME/.hermes"
 : > "$T/hermes-calls"
-printf 'stt:\n  provider: flows\n  providers:\n    flows:\n      command: "python3 x/flows_stt.py"\napprovals:\n  destructive_slash_confirm: false\n' > "$HOME/.hermes/config.yaml"
+printf 'stt:\n  provider: flows\n  providers:\n    flows:\n      command: "python3 x/flows_stt.py"\napprovals:\n  destructive_slash_confirm: false\nauxiliary:\n  background_review:\n    enabled: true\nmemory:\n  nudge_interval: 0         # Nudge every 10 user turns (0 = disabled)\nskills:\n  creation_nudge_interval: 0\n' > "$HOME/.hermes/config.yaml"
+mkdir -p "$HOME/.hermes/cron"; echo '{"jobs": [{"script": "flows_remind.py"}]}' > "$HOME/.hermes/cron/jobs.json"
+check "самообучение включено — предложит выключить" "без автоматического самообучения" SH
+sed -i.bak 's/^    enabled: true$/    enabled: false/' "$HOME/.hermes/config.yaml"; rm -f "$HOME/.hermes/config.yaml.bak"
+: > "$T/hermes-calls"
 mkdir -p "$HOME/.hermes/cron"; echo '{"jobs": [{"script": "flows_remind.py"}]}' > "$HOME/.hermes/cron/jobs.json"
 check "всё на месте — ничего не делает" "✓ Настройки Hermes на месте" SH FLO_YES=1
 empty "…hermes не вызывается" cat "$T/hermes-calls"
 rm -rf "$HOME/.hermes"
 
-echo "▸ миграция со «следующей точки»"
-export FLOWS_NOW=2026-11-02T10:00
-NEXT() { printf -- '---\ntype: point\nflow: %s\nstatus: next\ncreated: 2026-11-01\ntitle: ""\n---\n\n# Следующая точка\n\n## Задачи\n\n- 2026-11-01: %s\n' "$1" "$2" > "$T/brain/flows/$1/_следующая.md"; }
-check "поток A" "создан" $F new-flow "Старый А" --slug old-a
-check "поток B" "создан" $F new-flow "Старый Б" --slug old-b
-sed -i.bak 's/^status: open/status: closed/' "$T/brain/flows/old-a/2026-11-02.md"; rm -f "$T/brain/flows/old-a/"*.bak
-NEXT old-a "Задача из следующей А"; NEXT old-b "Задача из следующей Б"
-check "migrate" "следующая влита в открытую" $F migrate
-check "…A: следующая стала открытой" "Задача из следующей А" $F open old-a
-check "…B: влита в открытую" "Задача из следующей Б" $F open old-b
-check "…файлов «следующая» нет" "0" bash -c "ls $T/brain/flows/*/_следующая.md 2>/dev/null | wc -l | tr -d ' '"
-check "повтор — не нужна" "Миграция не нужна" $F migrate
-printf '\n## Выводы\n\n- 2026-11-02: Старый вывод точки\n' >> "$T/brain/flows/old-b/2026-11-02.md"
-check "migrate: «Выводы» точки → «Комментарии»" "→ «Комментарии»: 1" $F migrate
-check "…и уехал из точки в комментарии потока" "– Старый вывод точки" $F card комментарии
-lacks "…старого заголовка нет" "## Выводы" cat "$T/brain/flows/old-b/2026-11-02.md"
-check "…повтор — не нужна" "Миграция не нужна" $F migrate
-printf '\n## Идеи\n\n- 2026-11-02: **Старая идея.** длинный текст\n- 2026-11-02: Идея без заголовка\n' >> "$T/brain/flows/old-b/2026-11-02.md"
-check "migrate: «Идеи» → комментарии с 💡" "идей перенесено в комментарии: 2" $F migrate
-check "…идеи — обычные комментарии потока (позже записанные — выше)" "– Идея без заголовка
-   ——  ▫️  /x1
-– Старая идея
-   /f2  ▫️  /x2" $F card комментарии
-lacks "…раздела «Идеи» нет" "## Идеи" cat "$T/brain/flows/old-b/2026-11-02.md"
-printf -- '---\ntype: flow-global\nflow: old-b\n---\n# Глобальные выводы\n\n## Записи\n- 2026-10-27: **Не снимать продажи.** Нельзя снимать продажи после старта\n' > "$T/brain/flows/old-b/_выводы.md"
-printf -- '---\ntype: flow-global\nflow: old-b\n---\n# Глобальные идеи\n\n## Записи\n- 2026-10-26: **💡 Старая глобальная идея.** текст\n' > "$T/brain/flows/old-b/_идеи.md"
-python3 - "$T/brain/flows/old-b/_поток.md" <<'PY'
-import sys, pathlib
-p = pathlib.Path(sys.argv[1]); t = p.read_text()
-t = t.replace("# Старый Б\n", "# Старый Б\n\n[[flows/old-b/_выводы|Глобальные выводы]] · [[flows/old-b/_идеи|Глобальные идеи]]\n", 1)   # как на сервере: под названием
-p.write_text(t)
-PY
-check "migrate: выводы и идеи потока → комментарии потока" "Старый Б: выводы и идеи убраны, 2 перенесено в комментарии" $F migrate
-lacks "…💡 снята с комментариев" "💡" cat "$T/brain/flows/old-b/_поток.md"
-check "…глобальная идея — обычный комментарий" "- 2026-10-26: **Старая глобальная идея.** текст" cat "$T/brain/flows/old-b/_поток.md"
-lacks "…файла идей нет" "_идеи" ls "$T/brain/flows/old-b"
-check "…вывод среди комментариев потока, с датой" "- 2026-10-27: **Не снимать продажи.**" cat "$T/brain/flows/old-b/_поток.md"
-lacks "…файла выводов нет" "_выводы" ls "$T/brain/flows/old-b"
-lacks "…ссылки на выводы в шапке нет" "_выводы" cat "$T/brain/flows/old-b/_поток.md"
-lacks "…и на старые идеи — тоже" "_идеи" cat "$T/brain/flows/old-b/_поток.md"
-check "…повтор — не нужна" "Миграция не нужна" $F migrate
-printf '\n## Комментарии\n\n- 2026-10-25: Самый старый\n- 2026-11-05: Самый новый\n' >> "$T/brain/flows/old-b/2026-11-02.md"
-printf '\n## Комментарии\n' >> "$T/brain/_templates/Точка.md"
-check "migrate: комментарии точек → одни на поток" "комментарии — одни на поток: из точек перенесено 2 (потоков 1)" $F migrate
-check "…новые сверху, по дате" "## Комментарии
-- 2026-11-05: Самый новый
-- 2026-11-02:" cat "$T/brain/flows/old-b/_поток.md"
-check "…самый старый — внизу, перед оглавлением" "- 2026-10-25: Самый старый
-
-## Точки" cat "$T/brain/flows/old-b/_поток.md"
-lacks "…в точке раздела нет" "## Комментарии" cat "$T/brain/flows/old-b/2026-11-02.md"
-lacks "…и в шаблоне точки" "## Комментарии" cat "$T/brain/_templates/Точка.md"
-check "…повтор — не нужна" "Миграция не нужна" $F migrate
-check "метка новых приоритетов есть с init" "основные" cat "$T/brain/.flo-priorities-2"
-rm "$T/brain/.flo-priorities-2"
-for s in reklama gitara; do sed -i.bak 's/^priority: .*/priority: 3/' "$T/brain/flows/$s/_поток.md"; done
-sed -i.bak 's/^priority: .*/priority: 2/' "$T/brain/flows/old-b/_поток.md"; rm -f "$T/brain/flows/"*/*.bak
-check "migrate: три приоритета → два" "приоритеты: основных" $F migrate
-check "…старый P2 → основной" "priority: 1" cat "$T/brain/flows/old-b/_поток.md"
-check "…старый P3 → фоновый" "priority: 2" cat "$T/brain/flows/gitara/_поток.md"
-check "…метка поставлена" "основные" cat "$T/brain/.flo-priorities-2"
-check "…повтор — не нужна (второй раз не переводит)" "Миграция не нужна" $F migrate
-check "…фоновый остался фоновым" "priority: 2" cat "$T/brain/flows/gitara/_поток.md"
-$F set реклама --priority 1 >/dev/null
-check "…повтор — не нужна" "Миграция не нужна" $F migrate
-
-rm "$T/brain/.flo-newest-first"
-python3 - "$T/brain/flows/old-b/2026-11-02.md" <<'PY'
-import sys, pathlib
-p = pathlib.Path(sys.argv[1]); t = p.read_text()
-t = t.replace("## Задачи\n", "## Задачи\n- 2026-11-01: Старая первая\n- 2026-11-02: Старая вторая\n", 1)
-p.write_text(t)
-PY
-check "migrate: старые задачи — новые сверху" "задачи и контекст — новые сверху: перевёрнуто списков" $F migrate
-check "…порядок перевёрнут" "- 2026-11-02: Старая вторая
-- 2026-11-01: Старая первая" cat "$T/brain/flows/old-b/2026-11-02.md"
-check "…метка поставлена, повтор — не нужна" "Миграция не нужна" $F migrate
-check "…и порядок тот же" "- 2026-11-02: Старая вторая
-- 2026-11-01: Старая первая" cat "$T/brain/flows/old-b/2026-11-02.md"
+echo "▸ миграция"
+check "переводить нечего" "Миграция не нужна" $F migrate
 
 echo "▸ копилка"
 export FLOWS_NOW=2026-11-01T12:00

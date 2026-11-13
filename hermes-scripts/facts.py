@@ -237,7 +237,8 @@ def cmd_save(a):
             if not sp.is_file():
                 die(f"Нет файла {src}")
             FILES.mkdir(parents=True, exist_ok=True)
-            dest = FILES / f"{path.stem}-{re.sub(r'[^\w.\-]', '_', sp.name)}"
+            safe = re.sub(r"[^\w.\-]", "_", sp.name)
+            dest = FILES / f"{path.stem}-{safe}"
             shutil.copy2(sp, dest)
             lines.append(f"- Файл: ![[копилка/_files/{dest.name}]]")
         if len(lines) > 2:

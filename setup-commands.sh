@@ -65,8 +65,6 @@ if builtin_src.exists():
 for name in sorted(n for n in ours if n in builtin):
     print(f"⚠ Кнопка /{name} совпадает со встроенной командой Hermes — Hermes перехватит её. Переименуй в setup-commands.sh и flows.py.")
 
-LEGACY = {"tochka", "nazad", "vpered", "vyvody", "idei", "ideas", "insights",
-          "conclusions", "full", "zip", "list3"}   # наши старые кнопки — убрать (с 2026.11.12–12.2)
 L = cy.read_text().split("\n")
 keep = []                                   # чужие команды из старого блока — сохраняем
 if "quick_commands:" in L:
@@ -77,7 +75,7 @@ if "quick_commands:" in L:
         m = re.match(r'^  ["\']?([^"\':\s]+)["\']?:\s*$', line)
         if m:
             cur = m.group(1)
-        if cur and cur not in ours and cur not in LEGACY and not re.fullmatch(r"[nxf]?\d+", cur):
+        if cur and cur not in ours and not re.fullmatch(r"[nxf]?\d+", cur):
             keep.append(line)
     del L[s:e]
 new = ["quick_commands:"] + [l for l in keep if l.strip()]

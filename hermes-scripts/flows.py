@@ -51,7 +51,6 @@ DEFAULT_CONFIG = {
     "brain": "~/brain",                                # где лежит хранилище
     "timezone": "UTC",      # в каком часовом поясе думать о датах
     "git_autosync": False,                             # pull перед изменением, commit+push после
-    "stale_days": {"1": 7, "2": 14},  # «давно не трогали»: основные / фоновые (старый вид с "3" тоже читается)
     "current_flow_hours": 0,                           # сколько часов помнить указатель на поток (0 — пока не переключат)
     "remind_grace_hours": 12,                          # опоздавшее напоминание ещё шлём в этом окне
     "remind_pull_minutes": 5,                          # git pull в проверке напоминаний не чаще, чем раз в N минут
@@ -103,22 +102,12 @@ HEADINGS = {
     "comments": "Комментарии",
 }
 POINT_KEYS = ("tasks", "context")
-OLD_COMMENTS_HEADING = "Выводы"   # так раздел комментариев назывался до 2026.10.27.1 (migrate переименует)
-OLD_IDEAS_HEADING = "Идеи"        # раздел точки до 2026.10.27.6; migrate переносит его в комментарии
-OLD_IDEA_MARK = "💡"              # до 2026.11.12.3 идея была комментарием с лампочкой; migrate её снимает
 # У потока всегда одна открытая точка — в неё пишется всё. Когда точку завершают («начинаем новую
 # точку»), невыполненные (не скрытые) задачи переезжают в новую; сделанные (✓) и контекст
 # остаются в завершённой — это история, её листают кнопками /prev и /next. Комментарии — у потока,
-# точки их не трогают. Идей и выводов как понятий нет (с 2026.11.12.3): всё — комментарии вперемешку.
+# точки их не трогают. Идей и выводов как понятий нет: всё — комментарии вперемешку.
 FORWARD_KEYS = ("tasks",)
-NEXT_FILE = "_следующая.md"   # старая схема: «следующая точка»; flows.py migrate вливает её в открытую
-NEXT_SPECS = ("next", "следующая", "следующую", "след")
 SECTIONS_HINT = "Раздел: контекст | задачи | комментарии"
-# Старые файлы потока «Глобальные выводы» и «Глобальные идеи»: migrate переносит их записи в
-# комментарии и удаляет файлы и ссылки на них (OLD_GLOBAL_SECTION — раздел записей в них).
-OLD_CONCLUSIONS_FILE = "_выводы.md"
-OLD_IDEAS_FILE = "_идеи.md"
-OLD_GLOBAL_SECTION = "Записи"
 TOC_HEADING = "Точки"
 SECTION_ALIASES = {
     "контекст": "context", "сделано": "context", "context": "context", "ctx": "context",
@@ -136,30 +125,25 @@ STATUS_ALIASES = {
     "closed": "closed", "close": "closed", "закрыт": "closed", "закрыть": "closed",
 }
 STATUS_RU = {"open": "открыт", "paused": "на паузе", "closed": "закрыт"}
-# Приоритетов два (с 2026.11.12.2): 1 — основные (видны в /list, никак не подписаны), 2 — фоновые
-# (/background). Старое «3» читается как 2; migrate один раз переводит старые 1,2,3 → 1,1,2.
+# Приоритетов два: 1 — основные (видны в /list, никак не подписаны), 2 — фоновые (/background).
 PRIO_MAIN, PRIO_BG = 1, 2
 PRIO_LABEL = {PRIO_MAIN: "основной", PRIO_BG: "фоновый"}
-PRIO_MARKER = ".flo-priorities-2"   # в хранилище: приоритеты уже в новом виде (2 штуки)
-# Новые записи точки (задачи и контекст) — сверху списка (с 2026.11.12.4). Метка: в файлах уже этот
-# порядок (migrate один раз переворачивает старые списки, где новые были снизу).
-TASKS_MARKER = ".flo-newest-first"
-TASKS_MARKER_TEXT = ("Задачи и контекст в точках — новые сверху.\n"
-                     "Файл ставит flows.py; без него migrate один раз переворачивает эти списки.\n")
+STALE_DAYS = {PRIO_MAIN: 7, PRIO_BG: 14}   # ⚠ «давно не трогали»: столько дней без записей
+# Новое — сверху: задачи и контекст точки, комментарии потока.
 BG_CMD = "background"
 
 
 def prio_value(v) -> int:
-    """priority из файла или от агента → 1 (основной) или 2 (фоновый); старое 3 → 2."""
+    """priority из файла или от агента → 1 (основной) или 2 (фоновый)."""
     s = norm(str(v))
     if s in ("фон", "фоновый", "фоновые", "background", "bg"):
         return PRIO_BG
     if s in ("основной", "основные", "main"):
         return PRIO_MAIN
     n = int(s)
-    if n not in (1, 2, 3):
+    if n not in (PRIO_MAIN, PRIO_BG):
         raise ValueError(s)
-    return PRIO_MAIN if n == 1 else PRIO_BG
+    return n
 WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
 
 POINT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md$")
@@ -667,33 +651,23 @@ def entry_parts(entry: str) -> tuple[date | None, str]:
 # ─────────────────────────────── модель: поток и точка ────────────────────
 
 class Point:
-    """Точка — один заход в работу: ГГГГ-ММ-ДД.md (открыта или закрыта).
-    У потока одна открытая точка; NEXT_FILE («следующая точка») — только старые данные для migrate."""
+    """Точка — один заход в работу: ГГГГ-ММ-ДД.md (открыта или закрыта). У потока одна открытая."""
 
     def __init__(self, flow: "Flow", path: Path):
         self.flow = flow
         self.path = path
         self.note = Note(path)
         m = POINT_RE.match(path.name)
-        if m:
-            self.day = date.fromisoformat(m.group(1))
-            self.suffix = int(m.group(2) or 1)
-        else:  # у следующей точки даты ещё нет
-            dt, _ = parse_dt(self.note.get("created"))
-            self.day = dt.date() if dt else today()
-            self.suffix = 0
+        self.day = date.fromisoformat(m.group(1))
+        self.suffix = int(m.group(2) or 1)
 
     @property
     def stem(self) -> str:
         return self.path.stem
 
     @property
-    def is_next(self) -> bool:
-        return self.path.name == NEXT_FILE
-
-    @property
     def is_open(self) -> bool:
-        return not self.is_next and norm(self.note.get("status", "closed")) == "open"
+        return norm(self.note.get("status", "closed")) == "open"
 
     @property
     def title(self) -> str:
@@ -701,13 +675,11 @@ class Point:
 
     @property
     def label(self) -> str:
-        return self.title or ("следующая точка" if self.is_next else "(без заголовка)")
+        return self.title or "(без заголовка)"
 
     @property
     def where(self) -> str:
-        """Как назвать точку в ответе: «следующая точка» или «23.10 «Заголовок»»."""
-        if self.is_next:
-            return "следующая точка" + (f" «{self.title}»" if self.title else "")
+        """Как назвать точку в ответе: «23.10 «Заголовок»»."""
         return f"{dm(self.day)} «{self.label}»"
 
     @property
@@ -755,7 +727,7 @@ class Point:
         return [brief(plain(entry_parts(e)[1])) for e in self.visible(key)]
 
     def last_date(self) -> date:
-        dates = [] if self.is_next else [self.day]
+        dates = [self.day]
         closed, _ = parse_dt(self.note.get("closed"))
         if closed:
             dates.append(closed.date())
@@ -765,7 +737,7 @@ class Point:
             except ValueError:
                 pass
         past = [d for d in dates if d <= today()]
-        return max(past) if past else (date.min if self.is_next else self.day)
+        return max(past) if past else self.day
 
     def counts(self) -> str:
         parts = []
@@ -816,16 +788,11 @@ class Flow:
         return dt.date() if dt else None
 
     def points(self) -> list[Point]:
-        """Начатые точки (с датой), от ранней к поздней. Следующая — next_point()."""
+        """Точки от ранней к поздней."""
         if self._points is None:
             pts = [Point(self, p) for p in self.dir.iterdir() if p.is_file() and POINT_RE.match(p.name)]
             self._points = sorted(pts, key=lambda p: (p.day, p.suffix))
         return self._points
-
-    def next_point(self) -> Point | None:
-        """Старая схема: «следующая точка». После migrate её нет."""
-        p = self.dir / NEXT_FILE
-        return Point(self, p) if p.exists() else None
 
     def ensure_open(self) -> Point:
         """Открытая точка потока; нет — создаётся сегодняшняя (вызывать внутри Mutation)."""
@@ -845,13 +812,7 @@ class Flow:
         return self.open_point()
 
     def last_touch(self) -> date:
-        cands = [p.last_date() for p in self.points()[-2:]]
-        nxt = self.next_point()
-        if nxt:
-            cands.append(nxt.last_date())
-        if self.created:
-            cands.append(self.created)
-        cands = [d for d in cands if d != date.min]
+        cands = [p.last_date() for p in self.points()[-2:]] + ([self.created] if self.created else [])
         return max(cands) if cands else today()
 
     def point_started(self) -> datetime:
@@ -872,10 +833,7 @@ class Flow:
         return max((p.stat().st_mtime for p in self.dir.glob("*.md")), default=0.0)
 
     def is_stale(self) -> bool:
-        sd = CFG["stale_days"]
-        old = "3" in sd                       # старый вид {"1","2","3"}: основные = «2», фоновые = «3»
-        limit = int(sd.get(str(self.priority + 1) if old else str(self.priority), 14))
-        return self.status == "open" and days_ago(self.last_touch()) > limit
+        return self.status == "open" and days_ago(self.last_touch()) > STALE_DAYS[self.priority]
 
     def names(self) -> list[str]:
         return [self.slug, self.title] + [str(a) for a in self.aliases]
@@ -896,8 +854,6 @@ class Flow:
         self.note = note
 
     def resolve_point(self, spec: str | None) -> Point:
-        if spec and norm(spec) in NEXT_SPECS:   # старое «next» = текущая открытая точка
-            spec = None
         pts = self.points()
         if spec in (None, "", "last", "текущая", "последняя", "current"):
             cur = self.current()
@@ -1000,20 +956,12 @@ def save_state(st: dict):
 # фоновые потоки, календарь); её ставит кнопка через go и снимает view.
 
 def get_pointer(st: dict | None = None) -> dict | None:
-    st = load_state() if st is None else st
-    ptr = st.get("pointer")
-    if ptr is None and st.get("current"):          # состояние старой схемы (до 2026.10.26.7)
-        cur, v = st["current"], st.get("view") or {}
-        ptr = {"flow": cur.get("flow"), "at": cur.get("at"),
-               "point": v.get("point", "") if v.get("flow") == cur.get("flow") else ""}
-    return ptr
+    return (load_state() if st is None else st).get("pointer")
 
 
 def set_pointer(flow: str, point: str = "", screen: str = ""):
     st = load_state()
     st["pointer"] = {"flow": flow, "point": point, "at": now().isoformat(timespec="minutes")}
-    st.pop("current", None)
-    st.pop("view", None)
     if screen:
         st["screen"] = screen
     else:
@@ -1033,8 +981,7 @@ def clear_current(screen: str = ""):
     ptr = get_pointer(st)
     if ptr and ptr.get("flow"):
         st["last_point"] = {"flow": ptr["flow"], "point": ptr.get("point", "")}
-    for k in ("pointer", "current", "view"):
-        st.pop(k, None)
+    st.pop("pointer", None)
     if screen:
         st["screen"] = screen
     save_state(st)
@@ -1168,35 +1115,14 @@ def create_point(flow: Flow, day: date, title: str = "") -> Point:
     return Point(flow, path)
 
 
-def start_next(flow: Flow, nxt: Point, title: str = "") -> Point:
-    """Старая схема (migrate): следующая точка становится сегодняшней открытой."""
-    path = new_point_path(flow, today())
-    note = nxt.note
-    note.delete("created")
-    note.set("date", today().isoformat())
-    note.set("status", "open")
-    if title:
-        note.set("title", title)
-    t = str(note.get("title") or "").strip()
-    note.set_h1(t or today().strftime("%d.%m.%Y"))
-    note.path = path
-    note.save()
-    nxt.path.unlink()
-    flow._points = None
-    return Point(flow, path)
-
-
 def put_entry(note: "Note", key: str, entry: str):
     """Запись в раздел точки — в начало (новые сверху): задачи, контекст."""
     note.prepend_entry(HEADINGS[key], entry, before=HEADINGS["context"] if key == "tasks" else None)
 
 
-def route_point(f: Flow, key: str, spec: str | None = None, to_next: bool = False) -> Point:
-    """Куда писать запись: всё — в хвост открытой точки (нет — создаётся). Явно названная прошлая
-    точка (дата, номер) — в неё. «next» и to_next — старые слова, тоже открытая точка."""
-    if spec and norm(spec) not in NEXT_SPECS:
-        return f.resolve_point(spec)
-    return f.ensure_open()
+def route_point(f: Flow, spec: str | None = None) -> Point:
+    """Куда писать запись: в открытую точку (нет — создаётся); явно названная прошлая (дата, номер) — в неё."""
+    return f.resolve_point(spec) if spec else f.ensure_open()
 
 
 # ─────────────────────────────── оглавление ПОТОКИ.md ─────────────────────
@@ -1234,7 +1160,7 @@ def build_index() -> str:
         out += ["## Календарь, 7 дней", ""]
         for ev in soon:
             out.append(f"- {ev.when_txt()} — {ev.link()}")
-        out += ["", f"Всё: [[календарь/КАЛЕНДАРЬ|Календарь]]"]
+        out += ["", "Всё: [[календарь/КАЛЕНДАРЬ|Календарь]]"]
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -1287,7 +1213,7 @@ def inbox_counts() -> tuple[int, int]:
 
 
 def _next_tasks(f: Flow) -> list[str]:
-    """Задачи «на сейчас»: из открытой точки, иначе из следующей."""
+    """Задачи «на сейчас» — из открытой точки."""
     p = f.ahead()
     return p.briefs("tasks") if p else []
 
@@ -1389,9 +1315,7 @@ BTN_EMPTY = "——"
 # кнопки карточки точки: комментарии (под датой), выполненные (внизу); /point — последняя точка
 CARD_CMDS = {"comments": "comments", "done": "done"}
 CARD_KEYS = {"комментарии": "comments", "комментарий": "comments", "comments": "comments",
-             "done": "done", "выполнено": "done", "выполненные": "done", "vypolneno": "done",
-             "выводы": "comments", "vyvody": "comments",   # старые кнопки
-             "идеи": "comments", "ideas": "comments", "idei": "comments"}   # идеи — в комментариях
+             "done": "done", "выполнено": "done", "выполненные": "done"}
 NAV_CMDS = {"prev": "prev", "next": "next", "point": "point"}
 CURRENT_MARK = "⚡"      # открытая точка — первый символ шапки карточки (у завершённых POINT_MARK)
 
@@ -1590,7 +1514,6 @@ def render_view(screen: str = "", if_asked: bool = False):
         if not fresh:                         # обычный /new из меню — тишина
             return save_state(st)
     screen = screen or st.pop("screen", "")
-    st.pop("screen_flow", None)               # пометка старого экрана выводов (до 2026.11.12)
     save_state(st)
     if screen == "calendar":
         return print_calendar()
@@ -1610,18 +1533,18 @@ def go(target: list[str]):
     | card комментарии | calendar (календарь указатель не трогает — разовый экран)."""
     what = norm(target[0]) if target else "list"
     rest = target[1:]
-    if what in ("list", BG_CMD, "list3", "фон", "фоновые"):   # list3 — старое имя /background
+    if what in ("list", BG_CMD, "фон", "фоновые"):
         return clear_current("list" if what == "list" else BG_CMD)
     if what in ("calendar", "календарь"):
         st = load_state()
         st["screen"] = "calendar"
         return save_state(st)
-    if what in (BACK_CMD, "назад-к-точке") and get_current():   # из комментариев — карточка той же точки
+    if what == BACK_CMD and get_current():   # из комментариев — карточка той же точки
         return set_pointer(get_current(), (get_pointer() or {}).get("point", ""))
     if what == "open":
         f = resolve_flow(rest[0] if rest else None)
         return set_pointer(f.slug)
-    if what in ("point", "last", "tochka", "точка", BACK_CMD, "назад-к-точке"):
+    if what in ("point", BACK_CMD):              # back без указателя — как /point
         cur = get_current()
         if cur:                               # указатель уже на точке — её карточку и покажем,
             st = load_state()                 # а если она уже на экране — последнюю точку потока
@@ -1644,11 +1567,11 @@ def go(target: list[str]):
         if not key:
             die("Карточка: комментарии | выполнено")
         return set_pointer(f.slug, ptr.get("point", ""), screen=key)
-    if what in ("prev", "next", "nazad", "vpered", "назад", "вперед"):
+    if what in ("prev", "next"):
         pts = f.points()
         if not p:
             return set_pointer(f.slug)
-        k = pts.index(p) + (-1 if what in ("prev", "nazad", "назад") else 1)
+        k = pts.index(p) + (-1 if what == "prev" else 1)
         q = pts[max(0, min(k, len(pts) - 1))]
         return set_pointer(f.slug, "" if q.is_open else q.stem)
     die(f"Не понимаю «{what}». Можно: list, background, open N, prev, next, point, back, card комментарии, calendar")
@@ -1700,7 +1623,7 @@ def cmd_hide(a):
     card = load_state().get("last_card") or {}
     if card.get("kind") == "calendar":
         return _hide_event(card.get("items") or [], a.n)
-    items = [it if isinstance(it, list) else [card.get("point", ""), it] for it in card.get("items") or []]
+    items = card.get("items") or []
     if not 1 <= a.n <= len(items):
         die(f"В последней карточке нет пункта {a.n} — нажми номер потока ещё раз.\n\n" + FOOTER)
     f = resolve_flow(card["flow"])
@@ -1759,11 +1682,11 @@ def _hide_event(stems: list[str], n: int):
 
 
 def cmd_unhide(a):
-    """Вернуть скрытую задачу по куску текста (открытая, иначе следующая точка)."""
+    """Вернуть скрытую задачу по куску текста (по умолчанию — в открытой точке)."""
     f = resolve_flow(a.flow)
     p = f.resolve_point(a.point) if a.point else f.ahead()
     if not p:
-        die(f"У потока «{f.title}» нет открытой или следующей точки — укажи --point.")
+        die(f"У потока «{f.title}» нет открытой точки — укажи --point.")
     q = norm(a.find)
     hits = [e for e in p.entries("tasks") if is_hidden(e) and q in norm(e)]
     if len(hits) != 1:
@@ -1855,13 +1778,9 @@ def cmd_show(a):
 def cmd_point(a):
     f = resolve_flow(a.flow)
     p = f.resolve_point(a.point)
-    if p.is_next:
-        head = f"📍 {f.title} · следующая точка" + (f" «{p.title}»" if p.title else "")
-    else:
-        pts = f.points()
-        head = (f"📍 {f.title} · точка {pts.index(p) + 1}/{len(pts)} · {dm(p.day)} — {p.label}"
-                + (" · открыта" if p.is_open else " · закрыта"))
-    print(head)
+    pts = f.points()
+    print(f"📍 {f.title} · точка {pts.index(p) + 1}/{len(pts)} · {dm(p.day)} — {p.label}"
+          + (" · открыта" if p.is_open else " · закрыта"))
     if p.note.get("summary"):
         print(f"Кратко: {p.note.get('summary')}")
     tags = p.note.get("tags", [])
@@ -1892,16 +1811,15 @@ def cmd_collect(a):
         return
     print(f"{f.title}: {HEADINGS[key].lower()} по всем точкам")
     total = 0
-    nxt = f.next_point()
-    for p in f.points() + ([nxt] if nxt else []):
+    for p in f.points():
         es = p.entries(key)
         if not es:
             continue
         total += len(es)
-        print(f"\n{'Следующая точка' if p.is_next else dm(p.day) + ' — ' + p.label}:")
+        print(f"\n{dm(p.day)} — {p.label}:")
         for e in es:
             d, t = entry_parts(e)
-            later = f" (дописано {dm(d)})" if d and d != p.day and not p.is_next else ""
+            later = f" (дописано {dm(d)})" if d and d != p.day else ""
             print(f"- {plain(t)}{later}")
     if not total:
         print("\nЗаписей нет.")
@@ -1946,9 +1864,6 @@ def cmd_new_flow(a):
         prio = prio_value(a.priority)
     except ValueError:
         die("Приоритет: 1 — основной, 2 — фоновый.")
-    if not all_flows() and not (BRAIN / PRIO_MARKER).exists():
-        (BRAIN / PRIO_MARKER).write_text(PRIO_MARKER_TEXT, "utf-8")   # пустое хранилище — сразу новый вид
-        (BRAIN / TASKS_MARKER).write_text(TASKS_MARKER_TEXT, "utf-8")
     with Mutation(f"Новый поток: {title}"):
         d = FLOWS_DIR / slug
         d.mkdir(parents=True)
@@ -2024,7 +1939,7 @@ def cmd_add(a):
             path, where = f.comments_path, ""
             p = f.ensure_open() if a.summary else None
         else:
-            p = route_point(f, key, a.point, a.next)
+            p = route_point(f, a.point)
             put_entry(p.note, key, entry)
             path, where = p.path, f" · {p.where}"
         if a.summary:
@@ -2042,7 +1957,7 @@ def cmd_brief(a):
     f = resolve_flow(a.flow)
     p = f.resolve_point(a.point) if a.point else f.ahead()
     if not p:
-        die(f"У потока «{f.title}» нет открытой или следующей точки — укажи --point.")
+        die(f"У потока «{f.title}» нет открытой точки — укажи --point.")
     q = norm(a.find)
     hits = [(p.path, HEADINGS[k], e) for k in POINT_KEYS for e in p.entries(k) if q in norm(e)]
     hits += [(f.comments_path, HEADINGS["comments"], e) for e in f.comments() if q in norm(e)]
@@ -2156,8 +2071,7 @@ def cmd_delete_flow(a):
             unlinked += 1
         st = load_state()
         if (get_pointer(st) or {}).get("flow") == slug:
-            for k in ("pointer", "current", "view"):
-                st.pop(k, None)
+            st.pop("pointer", None)
         if (st.get("last_point") or {}).get("flow") == slug:
             st.pop("last_point", None)
         if str((st.get("last_add") or {}).get("path", "")).startswith(str(f.dir)):
@@ -2169,214 +2083,9 @@ def cmd_delete_flow(a):
 
 
 def cmd_migrate(a):
-    """Старая схема → новая (запускает install.sh, можно повторять): «следующая точка» вливается в
-    открытую (или сама становится открытой); у незакрытого потока без открытой точки — новая пустая.
-    Раздел точки «Выводы» → «Комментарии» (2026.10.27.1); записи раздела «Идеи» → в «Комментарии»,
-    раздел убирается (2026.10.27.6); старые `_выводы.md` и `_идеи.md` потока → в комментарии, файлы и
-    ссылки на них в `_поток.md` удаляются (2026.11.12, 2026.11.12.3); комментарии точек → одни на поток,
-    с них снимается 💡 (2026.11.12.3).
-    Ничего не удаляет без переноса; до и после — коммит в git хранилища."""
-    report = []
-    old = re.compile(rf"^##\s+{OLD_COMMENTS_HEADING}\s*$", re.M)
-    files = [TEMPLATES_DIR / "Точка.md"] + [q for q in FLOWS_DIR.glob("*/*.md")
-                                            if POINT_RE.match(q.name) or q.name == NEXT_FILE]
-    renamed = [q for q in files if q.exists() and old.search(q.read_text("utf-8"))]
-    if renamed:
-        with Mutation("Миграция: выводы точек → комментарии"):
-            for q in renamed:
-                q.write_text(old.sub(f"## {HEADINGS['comments']}", q.read_text("utf-8")), "utf-8")
-        report.append(f"раздел «{OLD_COMMENTS_HEADING}» → «{HEADINGS['comments']}»: {len(renamed)} файл(ов)")
-    ideas_re = re.compile(rf"^##\s+{OLD_IDEAS_HEADING}\s*$", re.M)
-    with_ideas = [q for q in files if q.exists() and ideas_re.search(q.read_text("utf-8"))]
-    if with_ideas:
-        moved = 0
-        with Mutation("Миграция: идеи точек → комментарии"):
-            for q in with_ideas:
-                if q.parent == TEMPLATES_DIR:     # шаблон Obsidian: только убрать заголовок, шапку не трогать
-                    q.write_text(re.sub(r"^##\s+Идеи\s*\n\n?", "", q.read_text("utf-8"), flags=re.M), "utf-8")
-                    continue
-                note = Note(q)
-                lines = note.body.split("\n")
-                i = next(k for k, l in enumerate(lines) if ideas_re.match(l))
-                es = note.entries(OLD_IDEAS_HEADING)
-                j = next((k for k in range(i + 1, len(lines)) if re.match(r"^#{1,2}\s", lines[k])), len(lines))
-                del lines[i:j]
-                note.body = "\n".join(lines)
-                for e in es:
-                    note.append_entry(HEADINGS["comments"], e)
-                moved += len(es)
-                note.save()
-        report.append(f"раздел «{OLD_IDEAS_HEADING}» убран: {len(with_ideas)} файл(ов), идей перенесено в комментарии: {moved}")
-    flows = all_flows()
-    todo = [f for f in flows if f.next_point() or (f.status != "closed" and not f.open_point())]
-    if todo:
-        _migrate_points(todo, report)
-    _migrate_conclusions(flows, report)
-    _migrate_priorities(flows, report)
-    _migrate_comments(all_flows(), report)     # перечитывает потоки после прошлых шагов
-    _migrate_idea_marks(all_flows(), report)
-    _migrate_tasks_order(all_flows(), report)
-    print("✓ Миграция:\n" + "\n".join(f"– {r}" for r in report) if report else "✓ Миграция не нужна.")
-
-
-PRIO_MARKER_TEXT = ("Приоритеты потоков — в новом виде: 1 — основные, 2 — фоновые.\n"
-                    "Файл ставит flows.py; без него migrate считает приоритеты старыми (1, 2, 3).\n")
-
-
-def _migrate_priorities(flows: list[Flow], report: list[str]):
-    """Три приоритета → два (2026.11.12.2): 1 и 2 → 1 (основные), 3 → 2 (фоновые). Один раз — метка в хранилище."""
-    marker = BRAIN / PRIO_MARKER
-    if marker.exists():
-        return
-    if not flows:                             # пустое хранилище — сразу новый вид
-        marker.write_text(PRIO_MARKER_TEXT, "utf-8")
-        return
-    with Mutation("Миграция: два приоритета — основные и фоновые"):
-        moved = {PRIO_MAIN: 0, PRIO_BG: 0}
-        for f in flows:
-            try:
-                old = int(str(f.note.get("priority", 2)).strip())
-            except ValueError:
-                old = 2
-            new = PRIO_BG if old >= 3 else PRIO_MAIN
-            moved[new] += 1
-            if str(f.note.get("priority")) != str(new):
-                f.note.set("priority", new)
-                f.note.save()
-        tpl = TEMPLATES_DIR / "Поток.md"
-        if tpl.exists():
-            tpl.write_text(re.sub(r"^priority: 2$", "priority: 1", tpl.read_text("utf-8"), count=1, flags=re.M), "utf-8")
-        marker.write_text(PRIO_MARKER_TEXT, "utf-8")
-    report.append(f"приоритеты: основных {moved[PRIO_MAIN]}, фоновых {moved[PRIO_BG]} (было 1/2/3)")
-
-
-def _migrate_conclusions(flows: list[Flow], report: list[str]):
-    """Выводов и идей нет (2026.11.12, 2026.11.12.3): записи `_выводы.md` и `_идеи.md` → в комментарии
-    (дата сохраняется; через открытую точку — дальше их забирает _migrate_comments), файлы удаляются,
-    ссылки на них из шапки `_поток.md` — тоже."""
-    link = re.compile(r"[ \t]*\[\[flows/[^/\]]+/_(?:выводы|идеи)\|[^\]]*\]\](?: · )?")
-    files = {OLD_CONCLUSIONS_FILE: "выводы", OLD_IDEAS_FILE: "идеи"}
-    olds = [f for f in flows if any((f.dir / n).exists() for n in files)
-            or link.search((f.dir / FLOW_FILE).read_text("utf-8"))]
-    if not olds:
-        return
-    with Mutation("Миграция: старые выводы и идеи потока → комментарии"):
-        for f in olds:
-            done, n = [], 0
-            for name, what in files.items():
-                src = f.dir / name
-                if not src.exists():
-                    continue
-                es = Note(src).entries(OLD_GLOBAL_SECTION)
-                if es:
-                    p = f.open_point() or create_point(f, today())
-                    for e in es:
-                        p.note.append_entry(HEADINGS["comments"], e)
-                    p.note.save()
-                src.unlink()
-                done.append(what)
-                n += len(es)
-            fp = f.dir / FLOW_FILE
-            fp.write_text(re.sub(r"\n\n\n+", "\n\n", link.sub("", fp.read_text("utf-8"))), "utf-8")
-            report.append(f"{f.title}: {' и '.join(done) or 'ссылки на выводы/идеи'} убраны"
-                          + (f", {n} перенесено в комментарии" if n else ""))
-
-
-def _migrate_comments(flows: list[Flow], report: list[str]):
-    """Комментарии одни на поток (2026.11.12.3): раздел «Комментарии» всех точек → в `_поток.md`
-    (новые сверху, по дате записи; в один день — позже записанные выше), из точек и шаблона
-    `Точка.md` раздел убирается."""
-    head = re.compile(rf"^##\s+{HEADINGS['comments']}\s*$", re.M)
-    tpl = TEMPLATES_DIR / "Точка.md"
-    tpl_old = tpl.exists() and head.search(tpl.read_text("utf-8"))
-    todo = [f for f in flows if any(head.search(p.note.body) for p in f.points())]
-    if not todo and not tpl_old:
-        return
-    with Mutation("Миграция: комментарии — одни на поток"):
-        moved = 0
-        for f in todo:
-            chrono: list[str] = []
-            for p in f.points():
-                chrono += p.note.drop_section(HEADINGS["comments"])
-                p.note.save()
-            if chrono:
-                fn = Note(f.comments_path)
-                merged = list(reversed(chrono)) + fn.drop_section(HEADINGS["comments"])
-                merged.sort(key=lambda e: entry_parts(e)[0] or date.min, reverse=True)
-                for e in reversed(merged):
-                    fn.prepend_entry(HEADINGS["comments"], e, before=TOC_HEADING)
-                fn.save()
-                f.note = fn
-            moved += len(chrono)
-        if tpl_old:
-            tpl.write_text(re.sub(r"\n*^##\s+Комментарии\s*$\n?", "\n", tpl.read_text("utf-8"), flags=re.M), "utf-8")
-    report.append(f"комментарии — одни на поток: из точек перенесено {moved} (потоков {len(todo)})")
-
-
-def _migrate_tasks_order(flows: list[Flow], report: list[str]):
-    """Новые задачи и контекст — сверху (2026.11.12.4): один раз перевернуть эти списки во всех точках
-    (раньше новые дописывались снизу). Метка в хранилище — второй раз не переворачивать."""
-    marker = BRAIN / TASKS_MARKER
-    if marker.exists():
-        return
-    if not flows:
-        marker.write_text(TASKS_MARKER_TEXT, "utf-8")
-        return
-    with Mutation("Миграция: новые задачи и контекст — сверху"):
-        n = 0
-        for f in flows:
-            for p in f.points():
-                for key in POINT_KEYS:
-                    es = p.entries(key)
-                    if len(es) > 1:
-                        p.note.set_entries(HEADINGS[key], list(reversed(es)))
-                        n += 1
-                p.note.save()
-        marker.write_text(TASKS_MARKER_TEXT, "utf-8")
-    report.append(f"задачи и контекст — новые сверху: перевёрнуто списков {n}")
-
-
-IDEA_MARK_RE = re.compile(rf"^([-*]\s+(?:\d{{4}}-\d{{2}}-\d{{2}}:\s*)?(?:✓\s*)?)(\*\*)?{OLD_IDEA_MARK}\s*")
-
-
-def _migrate_idea_marks(flows: list[Flow], report: list[str]):
-    """Идей нет (2026.11.12.3): с комментариев потока снимается 💡 — остаются просто комментарии."""
-    fixes = []
-    for f in flows:
-        note = Note(f.comments_path)
-        es = [e for e in note.entries(HEADINGS["comments"]) if IDEA_MARK_RE.match(e)]
-        if es:
-            fixes.append((note, es))
-    if not fixes:
-        return
-    with Mutation("Миграция: идей нет — 💡 снята с комментариев"):
-        for note, es in fixes:
-            for e in es:
-                note.body = note.body.replace(e, IDEA_MARK_RE.sub(r"\1\2", e, count=1), 1)
-            note.save()
-    report.append(f"идей нет: 💡 снята с комментариев — {sum(len(es) for _, es in fixes)}")
-
-
-def _migrate_points(todo: list[Flow], report: list[str]):
-    with Mutation("Миграция: одна открытая точка на поток"):
-        for f in todo:
-            nxt, op = f.next_point(), f.open_point()
-            if nxt and op:
-                n = 0
-                for key, heading in HEADINGS.items():
-                    for e in nxt.entries(key):
-                        op.note.append_entry(heading, e)
-                        n += 1
-                op.note.save()
-                nxt.path.unlink()
-                report.append(f"{f.title}: следующая влита в открытую ({n} зап.)")
-            elif nxt:
-                p = start_next(f, nxt)
-                report.append(f"{f.title}: следующая стала открытой {dmy(p.day)}")
-            else:
-                create_point(f, today())
-                report.append(f"{f.title}: открыта новая точка")
-            f._points = None
+    """Перевод данных при смене формата (запускает install.sh, можно повторять). Сейчас переводить
+    нечего: старые форматы выведены 2026.11.13.2. Новая смена формата — новый шаг здесь."""
+    print("✓ Миграция не нужна.")
 
 
 def cmd_undo(a):
@@ -2441,7 +2150,7 @@ def cmd_attach(a):
     src = _find_voice(a.voice)
     vid = src.stem
     with Mutation(f"{f.title}: голосовая {vid}"):
-        p = route_point(f, "context", a.point)
+        p = route_point(f, a.point)
         dest = f.dir / "sources" / f"{vid}.md"
         if src != dest:
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -2508,7 +2217,7 @@ def cmd_inbox_move(a):
             f.add_comment(line)                # дата сохраняется исходная
             where = ""
         else:
-            p = route_point(f, key, a.point)
+            p = route_point(f, a.point)
             put_entry(p.note, key, line)
             p.note.save()
             where = f" · {p.where}"
@@ -2532,8 +2241,6 @@ def _point_files(include_sources: bool, flow: Flow | None = None):
         yield f, f.dir / FLOW_FILE
         for p in f.points():
             yield f, p.path
-        if (f.dir / NEXT_FILE).exists():
-            yield f, f.dir / NEXT_FILE
         if include_sources and (f.dir / "sources").exists():
             for s in sorted((f.dir / "sources").glob("*.md")):
                 yield f, s
@@ -2556,7 +2263,8 @@ def cmd_find(a):
                 results.append(f"{rel} · {what}: {short(str(title), 80)}")
             for line in note.body.split("\n"):
                 if re.search(r"(?<![\w])#" + re.escape(tag) + r"(?![\w-])", norm(line)):
-                    results.append(f"{rel}: {short(plain(re.sub(r'^[-*]\s+', '', line)), 200)}")
+                    txt = plain(re.sub(r"^[-*]\s+", "", line))
+                    results.append(f"{rel}: {short(txt, 200)}")
         if a.query:
             results = [r for r in results if norm(a.query) in norm(r)]
     else:
@@ -2636,6 +2344,16 @@ def _when_words(w: datetime | None, ht: bool, t: datetime) -> str:
 # ─────────────────────────────── календарь ────────────────────────────────
 # Одно событие = один файл в календарь/. Событие может быть само по себе
 # («к стоматологу») или по теме потока (flow), с датой или без (when нет — внизу календаря).
+
+
+def _is_past(w: datetime | None, ht: bool, t: datetime) -> bool:
+    """Прошло ли событие. Без времени (весь день) «прошло» = день кончился, не полночь."""
+    if not w:
+        return False
+    if ht:
+        return w < t
+    return w.date() < t.date()
+
 
 class Event:
     def __init__(self, path: Path):
@@ -2773,8 +2491,8 @@ def build_calendar_index() -> str:
     past = [e for e in evs if not e.active][-20:]
     out += [f"## Впереди ({len(ahead)})", ""]
     for e in ahead:
-        w, _ = e.when
-        late = " (прошло)" if w and w < t else ""
+        w, ht = e.when
+        late = " (прошло)" if _is_past(w, ht, t) else ""
         rem = f" · ⏰ {e.reminds_txt()}" if e.reminds else ""
         fl = f" · [[flows/{e.flow}/_поток|{e.flow}]]" if e.flow else ""
         out.append(f"- {e.when_txt()} — {e.link()}{fl}{rem}{late}")
@@ -2909,7 +2627,7 @@ def print_calendar(days: int | None = None):
         w, ht = ev.when
         today_mark = f"{CURRENT_MARK} " if w.date() == t.date() else ""   # сегодня — ⚡ сразу после номера
         day = f"{WEEKDAYS[w.weekday()]}" + (w.strftime(" %H:%M") if ht else "") + f" {dm(w.date())}"   # сб 15:00 31.10
-        row(ev, f"{today_mark}{day}" + (" (прошло)" if w < t else "") + f"\n   {ev.title}")   # день, время, дата; ниже что
+        row(ev, f"{today_mark}{day}" + (" (прошло)" if _is_past(w, ht, t) else "") + f"\n   {ev.title}")   # день, время, дата; ниже что
     if undated:
         print("\n📌 Без даты")
     for ev in undated:
@@ -3095,8 +2813,7 @@ def cmd_init(a):
         (TEMPLATES_DIR / "Поток.md", TPL_FLOW),
         (TAGS_FILE, TAGS_STARTER),
         (INBOX_NOTES, "# Входящие заметки\n\n"),
-    ) + (((BRAIN / PRIO_MARKER, PRIO_MARKER_TEXT), (BRAIN / TASKS_MARKER, TASKS_MARKER_TEXT))
-         if not any(FLOWS_DIR.glob(f"*/{FLOW_FILE}")) else ()):
+    ):
         if not path.exists():
             path.write_text(content, "utf-8")
             created.append(str(path.relative_to(BRAIN)))
@@ -3137,7 +2854,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("nav", cmd_nav, "go + view одной командой")
     p.add_argument("target", nargs="*")
 
-    add("migrate", cmd_migrate, "перевести старые данные на текущий формат (делает install.sh, можно повторять)")
+    add("migrate", cmd_migrate, "перевод данных при смене формата (делает install.sh; сейчас — нечего)")
 
     p = add("card", cmd_card, "комментарии потока под указателем (кнопка /comments)")
     p.add_argument("kind", help="комментарии | done")
@@ -3174,17 +2891,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("new-flow", cmd_new_flow, "создать поток")
     p.add_argument("title")
-    p.add_argument("--priority", default="1", help="1 — основной (по умолчанию), 2 — фоновый (старое 3 = 2)")
+    p.add_argument("--priority", default="1", help="1 — основной (по умолчанию), 2 — фоновый")
     p.add_argument("--tags", help="через запятую")
     p.add_argument("--aliases", help="другие названия через запятую")
     p.add_argument("--slug")
 
-    for name in ("new-point", "close-point"):
-        p = add(name, cmd_new_point, "«начинаем новую точку»: завершить текущую, открыть новую, "
-                                     "перенести невыполненные задачи")
-        p.add_argument("flow", nargs="?")
-        p.add_argument("--title", default="")
-        p.add_argument("--fresh", action="store_true", help="не переносить задачи")
+    p = add("new-point", cmd_new_point, "«начинаем новую точку»: завершить текущую, открыть новую, "
+                                        "перенести невыполненные задачи")
+    p.add_argument("flow", nargs="?")
+    p.add_argument("--title", default="")
+    p.add_argument("--fresh", action="store_true", help="не переносить задачи")
 
     p = add("continue", cmd_continue, "«продолжаем работать в …»: указатель + актуальная точка + сводка")
     p.add_argument("flow")
@@ -3213,7 +2929,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("flow")
     p.add_argument("section", help="контекст | задачи | комментарии («идеи», «выводы» — тоже комментарии)")
     p.add_argument("text", help="текст или - (из stdin)")
-    p.add_argument("--next", action="store_true", help="устарело: всё пишется в открытую точку")
     p.add_argument("--point", help="дата или номер прошлой точки; по умолчанию — открытая")
     p.add_argument("--src", help="id голосовой, к которой относится запись")
     p.add_argument("--summary", help="заодно обновить выжимку точки (одна фраза)")
