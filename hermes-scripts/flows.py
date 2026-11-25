@@ -1327,15 +1327,18 @@ LIST_LINKS = 30                                       # столько кома�
 
 FOOTER = "/calendar   /list"   # нижний ряд кнопок каждого экрана (/point работает, но в ряд не выводится)
 TODAY_MARK = "⚡"                # перед /calendar, если на сегодня есть события
+NEWPOINT_CMD = "newpoint"       # справа в ряду карточки открытой точки, где есть выполненные задачи
 
 
-def footer() -> str:
+def footer(new_point: bool = False) -> str:
     """Нижний ряд; есть активные события на сегодня — «⚡ /calendar   /list». Читает только файлы
-    календаря с сегодняшней датой в имени (имя события начинается с его даты)."""
+    календаря с сегодняшней датой в имени (имя события начинается с его даты).
+    new_point — справа кнопка «/newpoint» (карточка открытой точки с выполненными задачами)."""
     d = today()
     hot = any(e.active and e.when[0] and e.when[0].date() == d
               for e in (Event(p) for p in CAL_DIR.glob(f"{d:%Y-%m-%d}-*.md")))
-    return f"{TODAY_MARK} {FOOTER}" if hot else FOOTER
+    row = FOOTER + (f"   /{NEWPOINT_CMD}" if new_point else "")
+    return f"{TODAY_MARK} {row}" if hot else row
 HIDE_PREFIX = "x"        # кнопки скрытия задач в карточке: /x1, /x2 …
 EXPAND_PREFIX = "f"      # раскрыть/свернуть одну запись (задачу, комментарий): /f1, /f2 …
 BACK_CMD = "back"        # из комментариев — назад в карточку точки
@@ -1487,6 +1490,7 @@ def print_point_card(f: Flow, p: Point | None, done_open: bool = False):
         return
     print(f"/{CARD_CMDS['comments']} ({len(f.comments())})")
     open_ = _expanded(f, p, kind)
+    done = []
     if p.is_open:
         _print_items("Задачи", p.path, p.entries("tasks"), items, shown, open_)
         if not items:
@@ -1504,7 +1508,7 @@ def print_point_card(f: Flow, p: Point | None, done_open: bool = False):
             print("\nзадач не было")
     _save_card(f, kind, items, p, shown)
     _print_nav(f, p)
-    print("\n" + footer())
+    print("\n" + footer(new_point=bool(done)))   # done есть только у открытой точки
 
 
 def print_comments(f: Flow, p: Point | None = None):
@@ -1564,7 +1568,8 @@ def render_view(screen: str = "", if_asked: bool = False):
 
 def go(target: list[str]):
     """Переставить указатель (без вывода): list | background | open N | prev | next | point | back
-    | card комментарии | calendar (календарь указатель не трогает — разовый экран)."""
+    | card комментарии | calendar (календарь указатель не трогает — разовый экран)
+    | newpoint (кнопка /newpoint: новая точка потока под указателем, если в открытой есть выполненные)."""
     what = norm(target[0]) if target else "list"
     rest = target[1:]
     if what in ("list", BG_CMD, "фон", "фоновые"):
@@ -1608,7 +1613,14 @@ def go(target: list[str]):
         k = pts.index(p) + (-1 if what == "prev" else 1)
         q = pts[max(0, min(k, len(pts) - 1))]
         return set_pointer(f.slug, "" if q.is_open else q.stem)
-    die(f"Не понимаю «{what}». Можно: list, background, open N, prev, next, point, back, card комментарии, calendar")
+    if what == NEWPOINT_CMD:     # кнопка /newpoint: новая точка, только если в открытой есть выполненные
+        op = f.open_point()      # (кнопка из старого сообщения, двойное нажатие — просто карточка)
+        if op and any(is_hidden(e) for e in op.entries("tasks")):
+            with Mutation(f"{f.title}: новая точка"):
+                begin_point(f)
+        return set_pointer(f.slug)
+    die(f"Не понимаю «{what}». Можно: list, background, open N, prev, next, point, back, card комментарии, "
+        f"calendar, {NEWPOINT_CMD}")
 
 
 def cmd_go(a):

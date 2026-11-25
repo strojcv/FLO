@@ -57,11 +57,14 @@ bash ~/flows-organizer/install.sh
 
 ---
 
-## 4а. Кнопки /list, /1…/30, /prev, /next, /comments, /back, /calendar, /x…, /f…
+## 4а. Кнопки /list, /1…/30, /prev, /next, /comments, /back, /calendar, /newpoint, /x…, /f…
 
 Отдельно запускать не нужно: `install.sh` сам кладёт хук `~/.hermes/hooks/flows-nav` и заводит
 кнопки в `config.yaml` (строка «✓ Кнопки…»); после этого нужен `/restart`. В строке видно режим: «через /new, контекст чистится» —
 основной; «без /new» — Hermes старый, кнопки работают, но контекст не чистят.
+
+`/newpoint` (новая точка) видна не всегда: только справа в нижнем ряду карточки открытой точки,
+где выполнена хотя бы одна задача.
 
 `/new` по умолчанию спрашивает «точно?» — тогда кнопки срабатывают со второго нажатия. Установщик
 предлагает это выключить (подтверждение пропадёт и у других «опасных» команд Hermes). Вручную (`bash ~/flows-organizer/setup-commands.sh`) — только если
@@ -112,7 +115,7 @@ bash ~/flows-organizer/setup-gigaam.sh
    (`~/.openclaw/tools/venv`) может не быть — тогда убрать строки `openai-whisper…`,
    `faster-whisper…` из `stt_engines` в `config.json` или поставить свой venv и указать его в `stt_venv_python`.
 6. `hermes gateway restart`, в Telegram — `/new`. Проверка: `/list`, номер потока, `/comments`,
-   «напомни через 2 минуты …».
+   «напомни через 2 минуты …»; отметь задачу `/x1` — справа внизу появится `/newpoint`.
 
 
 ## Обновление (после доработок)

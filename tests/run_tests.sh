@@ -521,6 +521,7 @@ mkdir -p "$T/fakeha/hermes_cli"
 printf 'CMDS = [\n    CommandDef("new", "x", "S",\n               aliases=("reset",)),\n    CommandDef("stats", "y", "I",\n               aliases=("back",)),\n]\n' > "$T/fakeha/hermes_cli/commands.py"
 check "имя кнопки = встроенная команда Hermes (и синоним) — предупреждение" "⚠ Кнопка /back совпадает со встроенной командой Hermes" env HERMES_HOME="$T/hh" HERMES_AGENT_DIR="$T/fakeha" bash "$ROOT/setup-commands.sh"
 echo '{"nav_mode": "new"}' > "$T/nav.json"
+check "…кнопка /newpoint заведена" '"newpoint":' cat "$T/hh/config.yaml"
 check "nav_mode new — через /new" "через /new" env HERMES_HOME="$T/hh" FLOWS_CONFIG="$T/nav.json" bash "$ROOT/setup-commands.sh"
 check "…/prev → alias" 'target: "/new flows prev"' cat "$T/hh/config.yaml"
 check "hermes не вызывается" "0" bash -c "cat $T/hermes-calls 2>/dev/null | wc -l | tr -d ' '"
@@ -599,6 +600,29 @@ touch -t 202001010000 "$OTHER"
 check "запись в один поток" "Задачи +1" $F add запуск задачи "Купить домен"
 check "…оглавление другого потока не переписано" "202001010000" bash -c "date -r $OTHER +%Y%m%d%H%M 2>/dev/null || stat -c %y $OTHER"
 check "index — пересобирает всё" "обновлён" $F index
+unset FLOWS_NOW
+
+echo "▸ кнопка /newpoint"
+export FLOWS_NOW=2026-11-21T10:00
+check "поток для кнопки" "Кнопка" $F new-flow "Кнопка"
+$F add кнопка задачи "Первая задача" >/dev/null; $F add кнопка задачи "Вторая задача" >/dev/null
+lacks "выполненных нет — кнопки нет" "/newpoint" $F nav open кнопка
+check "/x1 — выполнена одна" "✓ Выполнено" $F hide 1
+check "…справа в нижнем ряду /newpoint" "/done (1)
+
+/calendar   /list   /newpoint" $F view
+check "…и на раскрытом /done" "/calendar   /list   /newpoint" $F nav card done
+lacks "…на комментариях нет" "/newpoint" $F nav card комментарии
+lacks "…в каталоге нет" "/newpoint" $F list
+check "нажатие через /new (go + view) — карточка новой точки" "Точка 2 из 2 · 22.11.2026" bash -c "$F nav open кнопка >/dev/null; FLOWS_NOW=2026-11-22T09:00 $F go newpoint; $F view"
+check "…невыполненная переехала" "Первая задача" $F view
+lacks "…выполненная осталась в старой" "Вторая задача" $F view
+lacks "…в новой выполненных нет — кнопки нет" "/newpoint" $F view
+check "повторное нажатие (старое сообщение) — точка не создаётся" "Точка 2 из 2" bash -c "$F go newpoint; $F view"
+$F hide 1 >/dev/null
+check "без /new (nav newpoint) — тоже новая точка" "Точка 3 из 3 · 23.11.2026" at 2026-11-23T09:00 $F nav newpoint
+check "…на завершённой точке кнопки нет" "📍 Кнопка" $F nav prev
+lacks "…/newpoint там нет" "/newpoint" $F view
 unset FLOWS_NOW
 
 echo "▸ миграция"

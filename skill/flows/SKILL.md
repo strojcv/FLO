@@ -60,7 +60,7 @@ F="python3 $HOME/.hermes/scripts/flows.py"   # не ~ : в кавычках ти
 
 Кнопки, если дошли до тебя: `/list` → `$F nav list`, `/N` → `$F nav open N`, `/prev` `/next`
 `/point` → `$F nav …`, `/comments` → `$F nav card комментарии`, `/done` → `$F nav card done`, `/back` → `$F nav back`,
-`/calendar` → `$F nav calendar`, `/xN` → `$F hide N`, `/fN` → `$F expand N`. Вывод — как есть.
+`/calendar` → `$F nav calendar`, `/newpoint` → `$F nav newpoint`, `/xN` → `$F hide N`, `/fN` → `$F expand N`. Вывод — как есть.
 
 ## Как писать
 
