@@ -982,6 +982,14 @@ def set_current(slug: str):
     set_pointer(slug, ptr.get("point", "") if ptr and ptr.get("flow") == slug else "")
 
 
+def pointer_after_write(slug: str):
+    """Запись в поток: указателя нет — встаёт на этот поток; стоит на нём же — точка та же (снимается
+    пометка экрана); стоит на другом потоке — не двигается (запись в явно названный другой поток)."""
+    cur = get_current()
+    if not cur or cur == slug:
+        set_current(slug)
+
+
 def clear_current(screen: str = ""):
     """/list: снять указатель (где стоял — запомнить для /point)."""
     st = load_state()
@@ -1992,7 +2000,7 @@ def cmd_add(a):
             p.note.set("summary", a.summary.strip())
         if p:
             p.note.save()
-        set_current(f.slug)
+        pointer_after_write(f.slug)
         remember_last_add(path, HEADINGS[key], entry)
     print(f"✓ {f.title}{where} · {HEADINGS[key]} +1"
           + (" · кратко обновлено" if a.summary else ""))
@@ -2210,7 +2218,7 @@ def cmd_attach(a):
         entry = make_entry(f"[[flows/{f.slug}/sources/{vid}|{label}]]")
         put_entry(p.note, "context", entry)
         p.note.save()
-        set_current(f.slug)
+        pointer_after_write(f.slug)
     print(f"✓ Запись {vid} привязана: {f.title} · {p.where}. "
           f"Ссылка на неё для записей: --src {vid}")
 
